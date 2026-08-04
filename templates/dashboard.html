@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JMK · Painel de Estoque</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600;700&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'IBM Plex Sans', sans-serif; }
+  .sora { font-family: 'Sora', sans-serif; }
+  .mono { font-family: 'IBM Plex Mono', monospace; }
+
+  @keyframes subirEntrar { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes pulsarPonto { 0% { box-shadow: 0 0 0 0 rgba(22,163,74,0.55); } 70% { box-shadow: 0 0 0 7px rgba(22,163,74,0); } 100% { box-shadow: 0 0 0 0 rgba(22,163,74,0); } }
+
+  :root {
+    --azul: #0B4F9E; --azul-esc: #08386F; --laranja: #FF6A13; --laranja-esc: #C2410C;
+  }
+  body.claro {
+    --bg: #F7F7F5; --superficie: #FFFFFF; --superficie-alt: #F3F4F8; --borda: #ECEEF3; --borda-sutil: #F5F6FA;
+    --texto: #14213D; --mudo: #7B8296; --azul-claro: #EAF2FC; --laranja-claro: #FFF1E6;
+  }
+  body.escuro {
+    --bg: #0E141F; --superficie: #161E2C; --superficie-alt: #1E293B; --borda: rgba(255,255,255,0.08); --borda-sutil: rgba(255,255,255,0.05);
+    --texto: #EDF1FA; --mudo: #8891A8; --azul-claro: rgba(11,79,158,0.22); --laranja-claro: rgba(255,106,19,0.16);
+  }
+  body { background: var(--bg); color: var(--texto); transition: background .3s, color .3s; }
+
+  #shell { min-height: 100vh; display: flex; }
+
+  /* ---------- SIDEBAR ---------- */
+  #sidebar {
+    width: 224px; flex-shrink: 0; background: var(--superficie); border-right: 1px solid var(--borda);
+    padding: 20px 14px; display: flex; flex-direction: column; gap: 4px; position: sticky; top: 0; height: 100vh;
+    transition: width .28s cubic-bezier(.4,0,.2,1); overflow: hidden;
+  }
+  #sidebar.fechada { width: 76px; }
+  .marca-side { display: flex; align-items: center; gap: 11px; padding: 2px 6px; margin-bottom: 22px; }
+  .quadrado-logo { width: 36px; height: 36px; flex-shrink: 0; border-radius: 10px; background: linear-gradient(135deg, var(--azul), var(--laranja)); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 800; font-size: 15px; }
+  .marca-texto { white-space: nowrap; transition: opacity .15s; }
+  #sidebar.fechada .marca-texto, #sidebar.fechada .rotulo-nav, #sidebar.fechada .rodape-texto { opacity: 0; pointer-events: none; }
+  .marca-texto .nome { font-weight: 800; font-size: 14.5px; letter-spacing: -.2px; }
+  .marca-texto .sub { font-size: 10.5px; color: var(--mudo); }
+
+  #btn-colapsar {
+    align-self: flex-end; width: 26px; height: 26px; border-radius: 7px; border: 1px solid var(--borda);
+    background: transparent; color: var(--mudo); display: flex; align-items: center; justify-content: center;
+    cursor: pointer; margin-bottom: 14px; flex-shrink: 0;
+  }
+  #btn-colapsar:hover { background: var(--superficie-alt); color: var(--texto); }
+  #btn-colapsar svg { width: 14px; height: 14px; transition: transform .28s; }
+  #sidebar.fechada #btn-colapsar svg { transform: rotate(180deg); }
+
+  #nav-lateral { display: flex; flex-direction: column; gap: 3px; }
+  #nav-lateral a { display: flex; align-items: center; gap: 12px; padding: 10px 11px; border-radius: 10px; text-decoration: none; color: var(--mudo); font-weight: 600; font-size: 13.5px; white-space: nowrap; }
+  #nav-lateral a svg { width: 17px; height: 17px; flex-shrink: 0; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  #nav-lateral a:hover { background: var(--superficie-alt); color: var(--laranja); }
+  #nav-lateral a.ativo { color: #fff; background: linear-gradient(135deg, var(--azul), var(--azul-esc)); }
+
+  .rodape-side { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--borda); display: flex; flex-direction: column; gap: 10px; }
+  #btn-tema { display: flex; align-items: center; gap: 10px; background: transparent; border: none; cursor: pointer; padding: 4px 6px; color: var(--mudo); white-space: nowrap; }
+  .toggle-trilho { width: 34px; height: 19px; border-radius: 20px; background: var(--superficie-alt); border: 1px solid var(--borda); position: relative; flex-shrink: 0; transition: background .25s; }
+  body.escuro .toggle-trilho { background: var(--azul); }
+  .toggle-bola { width: 14px; height: 14px; border-radius: 50%; background: #fff; position: absolute; top: 1.5px; left: 2px; transition: left .25s; box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+  body.escuro .toggle-bola { left: 17px; }
+  .rodape-texto { font-size: 10.5px; color: var(--mudo); display: flex; align-items: center; gap: 6px; white-space: nowrap; padding: 0 6px; }
+  .dot-live { width: 7px; height: 7px; border-radius: 50%; background: #16A34A; display: inline-block; flex-shrink: 0; animation: pulsarPonto 2s infinite; }
+
+  /* ---------- CONTEÚDO ---------- */
+  main { flex: 1; padding: 28px 36px 60px; max-width: 1400px; }
+  .topo-pagina { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 26px; }
+  .topo-pagina h1 { font-size: 24px; font-weight: 800; letter-spacing: -.4px; }
+  .topo-pagina .sub { font-size: 13px; color: var(--mudo); margin-top: 4px; }
+
+  #sino-wrap { position: relative; }
+  #sino-btn { cursor: pointer; width: 40px; height: 40px; border-radius: 11px; background: var(--superficie); border: 1px solid var(--borda); display: flex; align-items: center; justify-content: center; position: relative; }
+  #sino-btn svg { width: 19px; height: 19px; stroke: var(--mudo); fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .badge-avisos { position: absolute; top: -4px; right: -4px; background: var(--laranja); color: #fff; font-size: 10px; font-weight: 800; border-radius: 20px; min-width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; padding: 0 3px; }
+  #painel-avisos { position: absolute; right: 0; top: 48px; width: 320px; background: var(--superficie); border: 1px solid var(--borda); border-radius: 14px; box-shadow: 0 16px 40px rgba(0,0,0,.18); padding: 10px; z-index: 30; display: none; }
+  #painel-avisos.aberto { display: block; }
+  .item-aviso { padding: 11px 12px; border-radius: 10px; margin-bottom: 4px; border-left: 3px solid #ccc; }
+  .item-aviso .t { font-size: 12.5px; font-weight: 700; }
+  .item-aviso .d { font-size: 11.5px; color: var(--mudo); margin-top: 2px; }
+
+  /* ---------- KPIs ---------- */
+  .grid-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 16px; }
+  @media (max-width: 1100px) { .grid-kpis { grid-template-columns: repeat(2, 1fr); } }
+  .cartao-kpi { background: var(--superficie); border: 1px solid var(--borda); border-radius: 18px; padding: 18px; animation: subirEntrar .5s ease both; }
+  .cartao-kpi-destaque { grid-column: span 2; display: flex; align-items: center; gap: 22px; }
+  @media (max-width: 1100px) { .cartao-kpi-destaque { grid-column: span 2; } }
+  .anel-wrap { position: relative; width: 88px; height: 88px; flex-shrink: 0; }
+  .anel-wrap svg { width: 88px; height: 88px; transform: rotate(-90deg); }
+  .anel-valor { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 19px; }
+  .icone-kpi { width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; margin-bottom: 12px; }
+  .icone-kpi svg { width: 19px; height: 19px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .icone-kpi.azul { background: var(--azul-claro); color: var(--azul); }
+  .icone-kpi.laranja { background: var(--laranja-claro); color: var(--laranja-esc); }
+  .valor-kpi { font-weight: 800; font-size: 24px; }
+  .label-kpi { font-size: 11px; color: var(--mudo); font-weight: 600; margin-top: 3px; }
+
+  /* ---------- SEÇÕES ---------- */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 22px; }
+  @media (max-width: 980px) { .grid-2 { grid-template-columns: 1fr; } }
+  .cartao { background: var(--superficie); border: 1px solid var(--borda); border-radius: 18px; padding: 20px; }
+  .titulo-secao { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; margin-bottom: 4px; }
+  .titulo-secao svg { width: 17px; height: 17px; stroke: var(--laranja); fill: none; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+  .sub-secao { font-size: 12px; color: var(--mudo); margin-bottom: 16px; }
+  canvas { max-height: 220px; }
+
+  /* ---------- RANKING ---------- */
+  .linha-ranking { display: flex; align-items: center; gap: 11px; padding: 8px 0; border-bottom: 1px solid var(--borda-sutil); }
+  .linha-ranking:last-child { border-bottom: none; }
+  .medalha { width: 25px; height: 25px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; flex-shrink: 0; background: var(--superficie-alt); color: var(--mudo); }
+  .medalha.p1 { background: #FEF3C7; color: #B45309; }
+  .medalha.p2 { background: #F1F3F7; color: #64748B; }
+  .medalha.p3 { background: #FFEAD9; color: #C2410C; }
+  .barra-ranking-container { flex: 1; height: 9px; background: var(--superficie-alt); border-radius: 5px; overflow: hidden; }
+  .barra-ranking { height: 100%; border-radius: 5px; background: linear-gradient(90deg, var(--azul), var(--laranja)); transition: width 1s cubic-bezier(.4,0,.2,1); }
+  .valor-ranking { font-size: 12px; font-weight: 700; color: var(--mudo); width: 82px; text-align: right; flex-shrink: 0; }
+
+  /* ---------- RECOMENDAÇÕES ---------- */
+  .item-recomendacao { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 11px 13px; border-radius: 11px; background: var(--azul-claro); margin-bottom: 7px; }
+  .item-recomendacao .codigo { font-size: 12.5px; font-weight: 700; color: var(--azul-esc); }
+  .item-recomendacao .selo { font-size: 10px; font-weight: 700; background: var(--superficie); color: var(--azul); padding: 4px 9px; border-radius: 20px; }
+
+  /* ---------- FUNIL ---------- */
+  #funil { display: flex; flex-direction: column; gap: 10px; }
+  .etapa-funil { display: flex; align-items: center; gap: 12px; }
+  .rotulo-funil { width: 150px; font-size: 12px; color: var(--mudo); flex-shrink: 0; }
+  .container-barra-funil { flex: 1; background: var(--superficie-alt); border-radius: 9px; overflow: hidden; height: 30px; }
+  .barra-funil { height: 100%; display: flex; align-items: center; padding-left: 12px; color: #fff; font-size: 11.5px; font-weight: 700; border-radius: 9px; transition: width 1s cubic-bezier(.4,0,.2,1); }
+  .valor-funil { width: 38px; text-align: right; font-size: 13px; font-weight: 700; flex-shrink: 0; }
+
+  /* ---------- MAPA MINI ---------- */
+  #mapa-mini { display: flex; flex-direction: column; gap: 5px; cursor: pointer; }
+  .linha-mapa-mini { display: flex; align-items: center; gap: 8px; }
+  .linha-mapa-mini:hover { opacity: .75; }
+  .rotulo-mapa-mini { width: 18px; font-size: 10.5px; color: var(--mudo); font-weight: 700; text-align: right; flex-shrink: 0; }
+  .faixa-mapa-mini { display: flex; gap: 2px; flex: 1; }
+  .celula-mapa-mini { flex: 1; height: 14px; border-radius: 4px; transition: transform .15s; }
+  .celula-mapa-mini:hover { transform: scaleY(1.3); }
+
+  /* ---------- SIMULADOR ---------- */
+  #simulador-form { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+  #simulador-form input { flex: 1; min-width: 160px; padding: 11px 14px; border-radius: 10px; border: 1.5px solid var(--borda); background: var(--superficie-alt); color: var(--texto); font-size: 13px; }
+  #simulador-form input:focus { outline: none; border-color: var(--azul); }
+  #simulador-form button { padding: 11px 22px; border-radius: 10px; border: none; background: var(--laranja); color: #fff; font-weight: 700; font-size: 13px; cursor: pointer; }
+  #simulador-form button:hover { background: var(--laranja-esc); }
+  #simulador-resultado h3 { font-size: 11px; color: var(--mudo); margin: 0 0 8px; text-transform: uppercase; letter-spacing: .4px; }
+  .bloco-resultado { margin-bottom: 14px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; border-radius: 10px; padding: 7px 12px; font-size: 12px; margin: 0 6px 6px 0; font-weight: 600; }
+  .chip.consolidar { background: var(--laranja-claro); color: var(--laranja-esc); }
+  .chip.livre { background: var(--azul-claro); color: var(--azul-esc); }
+
+  /* ---------- FILTROS ---------- */
+  #filtros-form { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  #filtros-form input, #filtros-form select { flex: 1; min-width: 130px; padding: 10px 13px; border-radius: 10px; border: 1.5px solid var(--borda); background: var(--superficie-alt); color: var(--texto); font-size: 13px; }
+  #filtros-form input:focus, #filtros-form select:focus { outline: none; border-color: var(--azul); }
+  #filtros-form button { padding: 10px 20px; border-radius: 10px; border: none; background: var(--azul); color: #fff; font-weight: 700; font-size: 13px; cursor: pointer; }
+  #filtros-form button.limpar { background: var(--superficie-alt); color: var(--mudo); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th { text-align: left; color: var(--mudo); font-weight: 700; padding: 9px 10px; border-bottom: 2px solid var(--borda); text-transform: uppercase; font-size: 10px; letter-spacing: .3px; position: sticky; top: 0; background: var(--superficie); }
+  td { padding: 9px 10px; border-bottom: 1px solid var(--borda-sutil); }
+  tr:hover td { background: var(--superficie-alt); }
+  .tag { font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 7px; }
+  .tag.ENTRADA { background: #DCFCE7; color: #15803D; }
+  .tag.SAIDA { background: #FFE4DE; color: #C2410C; }
+  .tag.TRANSFERENCIA { background: #DBEAFE; color: #1D4ED8; }
+  #tabela-wrap { max-height: 400px; overflow-y: auto; }
+  .largura-total { grid-column: 1 / -1; }
+</style>
+</head>
+<body class="claro">
+<div id="shell">
+  <aside id="sidebar">
+    <div class="marca-side">
+      <div class="quadrado-logo">JM</div>
+      <div class="marca-texto">
+        <div class="nome sora">JMK Estoque</div>
+        <div class="sub">Sistema de armazenagem</div>
+      </div>
+    </div>
+    <button id="btn-colapsar" onclick="alternarSidebar()">
+      <svg viewBox="0 0 24 24" style="stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round"><polyline points="15,6 9,12 15,18"/></svg>
+    </button>
+    <nav id="nav-lateral">
+      <a href="/dashboard" class="ativo">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></svg>
+        <span class="rotulo-nav">Painel gerencial</span>
+      </a>
+      <a href="/estoque-visual">
+        <svg viewBox="0 0 24 24"><path d="M9 3 3 5v14l6-2 6 2 6-2V3l-6 2-6-2Z"/><line x1="9" y1="3" x2="9" y2="17"/><line x1="15" y1="5" x2="15" y2="19"/></svg>
+        <span class="rotulo-nav">Ocupação por rua</span>
+      </a>
+      <a href="/coletor">
+        <svg viewBox="0 0 24 24"><path d="M3 8V5a1 1 0 0 1 1-1h3"/><path d="M21 8V5a1 1 0 0 0-1-1h-3"/><path d="M3 16v3a1 1 0 0 0 1 1h3"/><path d="M21 16v3a1 1 0 0 0-1 1h-3"/><line x1="7" y1="12" x2="17" y2="12"/></svg>
+        <span class="rotulo-nav">Coletor</span>
+      </a>
+    </nav>
+    <div class="rodape-side">
+      <button id="btn-tema" onclick="alternarTema()">
+        <div class="toggle-trilho"><div class="toggle-bola"></div></div>
+        <span class="rodape-texto" id="rotulo-tema" style="opacity:1">Modo claro</span>
+      </button>
+      <div class="rodape-texto"><span class="dot-live"></span><span>Atualizado <span id="ultima-atualizacao" class="mono">agora</span></span></div>
+    </div>
+  </aside>
+
+  <main>
+    <div class="topo-pagina">
+      <div>
+        <h1 class="sora">Painel gerencial</h1>
+        <div class="sub">Visão completa da operação em tempo real</div>
+      </div>
+      <div id="sino-wrap">
+        <div id="sino-btn" onclick="event.stopPropagation(); document.getElementById('painel-avisos').classList.toggle('aberto')">
+          <svg viewBox="0 0 24 24"><path d="M12 3a5 5 0 0 0-5 5v3.5L5 15h14l-2-3.5V8a5 5 0 0 0-5-5Z"/><path d="M10 18a2 2 0 0 0 4 0"/></svg>
+          <span class="badge-avisos" id="badge-avisos" style="display:none">0</span>
+        </div>
+        <div id="painel-avisos"></div>
+      </div>
+    </div>
+
+    <div class="grid-kpis" id="kpis"></div>
+
+    <div class="grid-2">
+      <div class="cartao">
+        <div class="titulo-secao sora"><svg viewBox="0 0 24 24"><line x1="4" y1="20" x2="4" y2="10"/><line x1="10" y1="20" x2="10" y2="4"/><line x1="16" y1="20" x2="16" y2="14"/><line x1="22" y1="20" x2="22" y2="8"/></svg>Ranking de ruas mais movimentadas</div>
+        <div class="sub-secao">Últimos 7 dias · entradas, saídas e transferências</div>
+        <div id="ranking-ruas"></div>
+      </div>
+      <div class="cartao">
+        <div class="titulo-secao sora"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="0.6" fill="currentColor"/></svg>Recomendação de locais</div>
+        <div class="sub-secao">Posições livres priorizadas por facilidade de acesso</div>
+        <div id="recomendacoes"></div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="cartao">
+        <div class="titulo-secao sora"><svg viewBox="0 0 24 24"><path d="M4 4h16l-6.5 8v6l-3 2v-8L4 4Z"/></svg>Funil de capacidade</div>
+        <div class="sub-secao">Colunas por estágio de ocupação</div>
+        <div id="funil"></div>
+      </div>
+      <div class="cartao">
+        <div class="titulo-secao sora"><svg viewBox="0 0 24 24"><path d="M9 3 3 5v14l6-2 6 2 6-2V3l-6 2-6-2Z"/><line x1="9" y1="3" x2="9" y2="17"/><line x1="15" y1="5" x2="15" y2="19"/></svg>Mapa de ocupação resumido</div>
+        <div class="sub-secao">Clique para abrir o detalhe completo</div>
+        <div id="mapa-mini"></div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="cartao">
+        <div class="titulo-secao sora"><svg viewBox="0 0 24 24"><line x1="4" y1="20" x2="4" y2="10"/><line x1="10" y1="20" x2="10" y2="4"/><line x1="16" y1="20" x2="16" y2="14"/><line x1="22" y1="20" x2="22" y2="8"/></svg>Movimentos por rua hoje</div>
+        <div class="sub-secao">Entradas + saídas + transferências</div>
+        <canvas id="chart-ruas"></canvas>
+      </div>
+      <div class="cartao">
+        <div class="titulo-secao sora"><svg viewBox="0 0 24 24"><polyline points="3,17 9,10 13,14 21,5"/></svg>Últimos 7 dias</div>
+        <div class="sub-secao">Volume diário de operações</div>
+        <canvas id="chart-timeline"></canvas>
+      </div>
+    </div>
+
+    <div class="cartao largura-total" style="margin-bottom:16px;">
+      <div class="titulo-secao sora"><svg viewBox="0 0 24 24"><path d="M4 20 14 10"/><path d="M14 4v3"/><path d="M20 10h-3"/><path d="M17 4l-1.5 1.5"/><path d="M20 7l-1.5 1.5"/></svg>Simulador de alocação</div>
+      <div class="sub-secao">Informe o código do produto e a quantidade para receber sugestões de onde guardar</div>
+      <div id="simulador-form">
+        <input id="sim-sku" type="text" placeholder="Código do produto (ex: 10)">
+        <input id="sim-qtd" type="number" placeholder="Quantidade (opcional)">
+        <button onclick="simular()">Simular alocação</button>
+      </div>
+      <div id="simulador-resultado"></div>
+    </div>
+
+    <div class="cartao largura-total" style="margin-bottom:16px;">
+      <div class="titulo-secao sora"><svg viewBox="0 0 24 24"><path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/></svg>Divergências de inventário</div>
+      <div class="sub-secao">Contagens com diferença entre físico e sistema, aguardando decisão (aprovação gera ajuste auditável)</div>
+      <div id="tabela-divergencias-wrap" style="max-height:320px;overflow-y:auto;">
+        <table>
+          <thead><tr><th>Data</th><th>Posição</th><th>Produto</th><th>Contado</th><th>Sistema</th><th>Diverg.</th><th>Operador</th><th>Ação</th></tr></thead>
+          <tbody id="tabela-divergencias"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="cartao largura-total" style="margin-bottom:16px;">
+      <div class="titulo-secao sora"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><polyline points="7,10 12,15 17,10"/><path d="M4 19h16"/></svg>Relatórios</div>
+      <div class="sub-secao">Exporte em CSV (abre direto no Excel)</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <a href="/api/relatorio/movimentos.csv" style="padding:10px 18px;border-radius:10px;background:var(--azul);color:#fff;font-weight:700;font-size:13px;text-decoration:none;">Movimentos completos</a>
+        <a href="/api/relatorio/saldo.csv" style="padding:10px 18px;border-radius:10px;background:var(--azul);color:#fff;font-weight:700;font-size:13px;text-decoration:none;">Saldo por posição</a>
+        <a href="/api/relatorio/inventario.csv" style="padding:10px 18px;border-radius:10px;background:var(--azul);color:#fff;font-weight:700;font-size:13px;text-decoration:none;">Inventário e divergências</a>
+      </div>
+    </div>
+
+    <div class="cartao largura-total">
+      <div class="titulo-secao sora"><svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><line x1="15" y1="15" x2="20" y2="20"/></svg>Consulta de movimentos</div>
+      <div class="sub-secao">Filtre por NF, produto, rua, posição ou tipo de operação</div>
+      <div id="filtros-form">
+        <input id="f-nf" type="text" placeholder="Número da NF">
+        <input id="f-sku" type="text" placeholder="Produto (código ou descrição)">
+        <input id="f-rua" type="text" placeholder="Rua (ex: A)" maxlength="1">
+        <input id="f-posicao" type="text" placeholder="Posição (ex: JMK1-A1-01)">
+        <select id="f-tipo">
+          <option value="">Todos os tipos</option>
+          <option value="ENTRADA">Entrada</option>
+          <option value="SAIDA">Saída</option>
+          <option value="TRANSFERENCIA">Transferência</option>
+        </select>
+        <button onclick="carregarTabela()">Filtrar</button>
+        <button class="limpar" onclick="limparFiltros()">Limpar</button>
+      </div>
+      <div id="tabela-wrap">
+        <table>
+          <thead><tr><th>Hora</th><th>Tipo</th><th>Produto</th><th>Qtd</th><th>Origem → Destino</th><th>NF</th><th>Operador</th></tr></thead>
+          <tbody id="tabela-corpo"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+let chartRuas = null, chartTimeline = null;
+let sidebarFechada = false;
+let temaAtual = 'claro';
+let raf = null;
+let resumoAnimado = { pct_ocupacao: 0, movimentos_hoje: 0, posicoes_livres: 0, total_produtos: 0 };
+
+async function api(caminho) {
+  const resp = await fetch(caminho);
+  if (!resp.ok) throw new Error(`Erro em ${caminho}`);
+  return resp.json();
+}
+
+function alternarSidebar() {
+  sidebarFechada = !sidebarFechada;
+  document.getElementById('sidebar').classList.toggle('fechada', sidebarFechada);
+}
+
+function alternarTema() {
+  temaAtual = temaAtual === 'claro' ? 'escuro' : 'claro';
+  document.body.className = temaAtual;
+  document.getElementById('rotulo-tema').textContent = temaAtual === 'claro' ? 'Modo claro' : 'Modo escuro';
+  desenharChartRuas();
+  desenharChartTimeline();
+}
+
+function corOcupacao(pct) {
+  if (pct === 0) return temaAtual === 'escuro' ? 'rgba(255,255,255,0.08)' : '#F0F1F5';
+  if (pct < 30) return '#93C5FD';
+  if (pct < 60) return '#2F80ED';
+  if (pct < 90) return '#FF6A13';
+  return '#C2410C';
+}
+
+function corMudo() { return temaAtual === 'escuro' ? '#8891A8' : '#7B8296'; }
+function corGrade() { return temaAtual === 'escuro' ? 'rgba(255,255,255,0.06)' : '#F0F1F5'; }
+
+const ICONE_OCUPACAO = `<svg viewBox="0 0 24 24"><path d="M4 4h16l-6.5 8v6l-3 2v-8L4 4Z"/></svg>`;
+const ICONE_MOVIMENTOS = `<svg viewBox="0 0 24 24"><line x1="7" y1="17" x2="17" y2="7"/><polyline points="7,7 17,7 17,17"/></svg>`;
+const ICONE_LIVRE = `<svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4-9-4Z"/><path d="M3 7v10l9 4 9-4V7"/><line x1="12" y1="11" x2="12" y2="21"/></svg>`;
+const ICONE_PRODUTOS = `<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="9" x2="9" y2="21"/></svg>`;
+
+async function carregarAvisos() {
+  const dados = await api('/api/dashboard/avisos');
+  const relevantes = dados.filter(a => a.tipo !== 'success');
+  const badge = document.getElementById('badge-avisos');
+  badge.textContent = relevantes.length;
+  badge.style.display = relevantes.length ? 'flex' : 'none';
+  const mapaCor = { warning: ['#FFFBEB', '#D97706'], danger: ['#FEF2F2', '#DC2626'], success: ['#F0FDF4', '#16A34A'] };
+  document.getElementById('painel-avisos').innerHTML = dados.map(a => {
+    const [fundo, borda] = mapaCor[a.tipo] || ['#F5F6FA', '#94A3B8'];
+    return `<div class="item-aviso" style="background:${fundo};border-left-color:${borda}"><div class="t">${a.titulo}</div><div class="d">${a.descricao}</div></div>`;
+  }).join('') || '<div style="font-size:12px;color:var(--mudo);padding:8px 12px;">Nenhum aviso no momento.</div>';
+}
+
+function animarResumo(alvo) {
+  if (raf) cancelAnimationFrame(raf);
+  const origem = { ...resumoAnimado };
+  const t0 = performance.now(), dur = 700;
+  const passo = (t) => {
+    const p = Math.min(1, (t - t0) / dur);
+    const ease = 1 - Math.pow(1 - p, 3);
+    resumoAnimado = {
+      pct_ocupacao: Math.round(origem.pct_ocupacao + (alvo.pct_ocupacao - origem.pct_ocupacao) * ease),
+      movimentos_hoje: Math.round(origem.movimentos_hoje + (alvo.movimentos_hoje - origem.movimentos_hoje) * ease),
+      posicoes_livres: Math.round(origem.posicoes_livres + (alvo.posicoes_livres - origem.posicoes_livres) * ease),
+      total_produtos: Math.round(origem.total_produtos + (alvo.total_produtos - origem.total_produtos) * ease),
+    };
+    renderizarKpis(alvo);
+    if (p < 1) raf = requestAnimationFrame(passo);
+  };
+  raf = requestAnimationFrame(passo);
+}
+
+let ultimoResumo = null;
+function renderizarKpis(d) {
+  const raio = 42, circ = 2 * Math.PI * raio;
+  const pct = Math.max(0, Math.min(100, resumoAnimado.pct_ocupacao));
+  const offset = circ * (1 - pct / 100);
+
+  document.getElementById('kpis').innerHTML = `
+    <div class="cartao-kpi cartao-kpi-destaque">
+      <div class="anel-wrap">
+        <svg viewBox="0 0 100 100">
+          <defs><linearGradient id="anelGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#0B4F9E"/><stop offset="100%" stop-color="#FF6A13"/></linearGradient></defs>
+          <circle cx="50" cy="50" r="42" fill="none" stroke="var(--superficie-alt)" stroke-width="9"/>
+          <circle cx="50" cy="50" r="42" fill="none" stroke="url(#anelGrad)" stroke-width="9" stroke-linecap="round" stroke-dasharray="${circ.toFixed(1)}" stroke-dashoffset="${offset.toFixed(1)}"/>
+        </svg>
+        <div class="anel-valor mono">${pct}%</div>
+      </div>
+      <div>
+        <div class="label-kpi" style="text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Ocupação geral</div>
+        <div class="mono" style="font-weight:600;font-size:15px;">${d.posicoes_ocupadas} / ${d.total_posicoes}</div>
+        <div style="font-size:12px;color:var(--mudo);margin-top:2px;">posições ocupadas / total</div>
+      </div>
+    </div>
+    <div class="cartao-kpi"><div class="icone-kpi azul">${ICONE_MOVIMENTOS}</div><div class="valor-kpi mono">${resumoAnimado.movimentos_hoje}</div><div class="label-kpi">Movimentos hoje</div></div>
+    <div class="cartao-kpi"><div class="icone-kpi laranja">${ICONE_LIVRE}</div><div class="valor-kpi mono">${resumoAnimado.posicoes_livres}</div><div class="label-kpi">Posições livres</div></div>
+    <div class="cartao-kpi"><div class="icone-kpi azul">${ICONE_PRODUTOS}</div><div class="valor-kpi mono">${resumoAnimado.total_produtos}</div><div class="label-kpi">Produtos · ${d.produtos_pendentes} pendente(s)</div></div>
+  `;
+}
+
+async function carregarKpis() {
+  const d = await api('/api/dashboard/resumo');
+  ultimoResumo = d;
+  animarResumo(d);
+}
+
+async function carregarRanking() {
+  const dados = await api('/api/dashboard/ranking-ruas?dias=7');
+  const max = dados.length ? dados[0].total : 1;
+  const medalhas = ['p1', 'p2', 'p3'];
+  document.getElementById('ranking-ruas').innerHTML = dados.slice(0, 10).map((r, i) => `
+    <div class="linha-ranking">
+      <div class="medalha ${medalhas[i] || ''}">${i + 1}</div>
+      <div style="width:24px;font-size:12.5px;font-weight:700;">${r.rua}</div>
+      <div class="barra-ranking-container"><div class="barra-ranking" style="width:${(r.total / max) * 100}%"></div></div>
+      <div class="valor-ranking mono">${r.total} mov · ${r.pct}%</div>
+    </div>
+  `).join('') || '<div style="font-size:13px;color:var(--mudo);">Sem movimentos no período.</div>';
+}
+
+async function carregarRecomendacoes() {
+  const dados = await api('/api/dashboard/sugestao-armazenagem?limite=6');
+  document.getElementById('recomendacoes').innerHTML = dados.map(c => `
+    <div class="item-recomendacao"><span class="codigo mono">${c}</span><span class="selo">Fácil acesso</span></div>
+  `).join('') || '<div style="font-size:13px;color:var(--mudo);">Nenhuma posição livre encontrada.</div>';
+}
+
+async function carregarFunil() {
+  const d = await api('/api/dashboard/funil');
+  const etapas = [
+    { label: 'Total de colunas', valor: d.colunas_totais, cor: 'linear-gradient(90deg,#0B4F9E,#2F80ED)' },
+    { label: 'Com estoque', valor: d.colunas_com_estoque, cor: 'linear-gradient(90deg,#2F80ED,#5AA6FF)' },
+    { label: 'Quase cheias (90%+)', valor: d.colunas_quase_cheias, cor: 'linear-gradient(90deg,#FF6A13,#FFB37A)' },
+    { label: '100% lotadas', valor: d.colunas_cheias, cor: 'linear-gradient(90deg,#C2410C,#E8794C)' },
+  ];
+  const max = d.colunas_totais || 1;
+  document.getElementById('funil').innerHTML = etapas.map(e => `
+    <div class="etapa-funil">
+      <div class="rotulo-funil">${e.label}</div>
+      <div class="container-barra-funil"><div class="barra-funil" style="width:${Math.max((e.valor / max) * 100, 4)}%; background:${e.cor}"></div></div>
+      <div class="valor-funil mono">${e.valor}</div>
+    </div>
+  `).join('');
+}
+
+async function carregarMapaMini() {
+  const dados = await api('/api/dashboard/ocupacao');
+  const porRua = {};
+  dados.forEach(d => {
+    const rua = d.lado[0];
+    if (!porRua[rua]) porRua[rua] = [];
+    const pct = d.niveis_totais ? (d.niveis_ocupados / d.niveis_totais) * 100 : 0;
+    porRua[rua].push(pct);
+  });
+  document.getElementById('mapa-mini').innerHTML = Object.keys(porRua).sort().map(rua => {
+    const celulas = porRua[rua].map(p => `<div class="celula-mapa-mini" style="background:${corOcupacao(p)}"></div>`).join('');
+    return `<div class="linha-mapa-mini" onclick="window.location.href='/estoque-visual'"><div class="rotulo-mapa-mini">${rua}</div><div class="faixa-mapa-mini">${celulas}</div></div>`;
+  }).join('');
+}
+
+async function carregarChartRuas() {
+  window._dadosChartRuas = await api('/api/dashboard/movimentos-por-rua');
+  desenharChartRuas();
+}
+function desenharChartRuas() {
+  const dados = window._dadosChartRuas;
+  const canvas = document.getElementById('chart-ruas');
+  if (!dados || !canvas) return;
+  const ctx = canvas.getContext('2d');
+  const grad = ctx.createLinearGradient(0, 0, 0, 220);
+  grad.addColorStop(0, '#FF6A13'); grad.addColorStop(1, '#FFB37A');
+  const config = {
+    type: 'bar',
+    data: { labels: dados.map(d => d.rua), datasets: [{ data: dados.map(d => d.total), backgroundColor: grad, borderRadius: 8, maxBarThickness: 30 }] },
+    options: { responsive: true, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false }, ticks: { color: corMudo() } }, y: { grid: { color: corGrade() }, ticks: { color: corMudo(), precision: 0 } } } }
+  };
+  if (chartRuas) { chartRuas.data = config.data; chartRuas.options = config.options; chartRuas.update(); } else { chartRuas = new Chart(ctx, config); }
+}
+
+async function carregarChartTimeline() {
+  window._dadosChartTimeline = await api('/api/dashboard/timeline');
+  desenharChartTimeline();
+}
+function desenharChartTimeline() {
+  const dados = window._dadosChartTimeline;
+  const canvas = document.getElementById('chart-timeline');
+  if (!dados || !canvas) return;
+  const ctx = canvas.getContext('2d');
+  const grad = ctx.createLinearGradient(0, 0, 0, 220);
+  grad.addColorStop(0, 'rgba(11,79,158,0.35)'); grad.addColorStop(1, 'rgba(11,79,158,0)');
+  const config = {
+    type: 'line',
+    data: { labels: dados.map(d => d.dia.slice(5)), datasets: [{ data: dados.map(d => d.total), borderColor: '#0B4F9E', backgroundColor: grad, fill: true, tension: 0.35, pointRadius: 3, pointBackgroundColor: '#0B4F9E' }] },
+    options: { responsive: true, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false }, ticks: { color: corMudo() } }, y: { grid: { color: corGrade() }, ticks: { color: corMudo(), precision: 0 } } } }
+  };
+  if (chartTimeline) { chartTimeline.data = config.data; chartTimeline.options = config.options; chartTimeline.update(); } else { chartTimeline = new Chart(ctx, config); }
+}
+
+async function simular() {
+  const sku = document.getElementById('sim-sku').value.trim();
+  const qtd = document.getElementById('sim-qtd').value;
+  const box = document.getElementById('simulador-resultado');
+  if (!sku) { box.innerHTML = '<p style="color:var(--mudo);font-size:13px">Informe o código do produto.</p>'; return; }
+  box.innerHTML = '<p style="color:var(--mudo);font-size:13px">Calculando...</p>';
+  try {
+    const url = `/api/simulador-alocacao?sku=${encodeURIComponent(sku)}${qtd ? '&quantidade=' + qtd : ''}`;
+    const d = await api(url);
+    if (d.erro) { box.innerHTML = `<p style="color:#DC2626;font-size:13px">${d.erro}</p>`; return; }
+    let html = `<p style="font-size:13.5px;margin-bottom:14px"><b>${d.sku}</b> — ${d.descricao}</p>`;
+    if (d.consolidar.length) {
+      html += `<div class="bloco-resultado"><h3>Já tem estoque desse produto (consolidar aqui)</h3>` +
+        d.consolidar.map(c => `<span class="chip consolidar">${c.codigo} · ${c.quantidade_atual} un</span>`).join('') + `</div>`;
+    }
+    html += `<div class="bloco-resultado"><h3>Posições livres sugeridas</h3>` +
+      d.sugestoes_livres.map(c => `<span class="chip livre">${c}</span>`).join('') + `</div>`;
+    box.innerHTML = html;
+  } catch (e) { box.innerHTML = '<p style="color:#DC2626;font-size:13px">Erro ao simular. Tente novamente.</p>'; }
+}
+
+async function carregarTabela() {
+  const params = new URLSearchParams();
+  const nf = document.getElementById('f-nf').value.trim();
+  const sku = document.getElementById('f-sku').value.trim();
+  const rua = document.getElementById('f-rua').value.trim();
+  const posicao = document.getElementById('f-posicao').value.trim();
+  const tipo = document.getElementById('f-tipo').value;
+  if (nf) params.set('numero_nf', nf);
+  if (sku) params.set('sku', sku);
+  if (rua) params.set('rua', rua);
+  if (posicao) params.set('posicao', posicao);
+  if (tipo) params.set('tipo', tipo);
+
+  const dados = await api(`/api/dashboard/movimentos-filtro?${params.toString()}`);
+  document.getElementById('tabela-corpo').innerHTML = dados.map(m => {
+    let detalhes = '—';
+    if (m.tipo_operacao === 'ENTRADA') detalhes = `→ ${m.posicao_destino}`;
+    if (m.tipo_operacao === 'SAIDA') detalhes = `${m.posicao_origem} →`;
+    if (m.tipo_operacao === 'TRANSFERENCIA') detalhes = `${m.posicao_origem} → ${m.posicao_destino}`;
+    return `<tr>
+      <td class="mono">${(m.data_hora || '').split(' ')[1] || ''}</td>
+      <td><span class="tag ${m.tipo_operacao}">${m.tipo_operacao === 'TRANSFERENCIA' ? 'TRANSF' : m.tipo_operacao}</span></td>
+      <td>${m.descricao_produto || m.sku}</td>
+      <td class="mono">${m.quantidade}</td>
+      <td class="mono">${detalhes}</td>
+      <td class="mono">${m.numero_nf || '-'}</td>
+      <td>${m.operador}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--mudo)">Nenhum movimento encontrado.</td></tr>';
+}
+
+function limparFiltros() {
+  ['f-nf', 'f-sku', 'f-rua', 'f-posicao'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('f-tipo').value = '';
+  carregarTabela();
+}
+
+async function carregarDivergencias() {
+  const dados = await api('/api/inventario/divergencias?status=PENDENTE');
+  document.getElementById('tabela-divergencias').innerHTML = dados.map(d => `
+    <tr>
+      <td class="mono">${(d.data_hora || '').split(' ')[0] || ''}</td>
+      <td class="mono">${d.posicao}</td>
+      <td>${d.descricao || d.sku}</td>
+      <td class="mono">${d.qtd_contada}</td>
+      <td class="mono">${d.qtd_sistema}</td>
+      <td class="mono" style="color:${d.divergencia > 0 ? '#15803D' : '#DC2626'};font-weight:700;">${d.divergencia > 0 ? '+' : ''}${d.divergencia}</td>
+      <td>${d.operador}</td>
+      <td>
+        <button onclick="decidirDivergencia(${d.id}, 'APROVAR')" style="padding:5px 10px;border-radius:7px;border:none;background:#DCFCE7;color:#15803D;font-weight:700;font-size:11px;cursor:pointer;margin-right:4px;">Aprovar</button>
+        <button onclick="decidirDivergencia(${d.id}, 'REJEITAR')" style="padding:5px 10px;border-radius:7px;border:none;background:#FEF2F2;color:#DC2626;font-weight:700;font-size:11px;cursor:pointer;">Rejeitar</button>
+      </td>
+    </tr>
+  `).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--mudo)">Nenhuma divergência pendente. 👌</td></tr>';
+}
+
+async function decidirDivergencia(id, decisao) {
+  if (decisao === 'APROVAR' && !confirm('Aprovar esse ajuste? O saldo da posição será corrigido e um movimento AJUSTE_INVENTARIO será registrado no log.')) return;
+  try {
+    const resp = await fetch(`/api/inventario/${id}/decidir`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ decisao }) });
+    const d = await resp.json();
+    if (!resp.ok) { alert(d.erro || 'Falha ao processar.'); return; }
+    carregarDivergencias();
+    carregarKpis();
+    carregarAvisos();
+  } catch (e) { alert('Sem conexão com o servidor.'); }
+}
+
+async function atualizarTudo() {
+  try {
+    await Promise.all([
+      carregarAvisos(), carregarKpis(), carregarRanking(), carregarRecomendacoes(),
+      carregarFunil(), carregarMapaMini(), carregarChartRuas(), carregarChartTimeline(), carregarTabela(), carregarDivergencias(),
+    ]);
+    document.getElementById('ultima-atualizacao').textContent =
+      new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date());
+  } catch (e) { console.error('Erro ao atualizar painel', e); }
+}
+
+document.addEventListener('click', (e) => {
+  const painel = document.getElementById('painel-avisos');
+  const sino = document.getElementById('sino-wrap');
+  if (!sino.contains(e.target)) painel.classList.remove('aberto');
+});
+
+atualizarTudo();
+setInterval(atualizarTudo, 20000);
+</script>
+</body>
+</html>

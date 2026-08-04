@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Coletor JMK</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  :root { --azul: #0B4F9E; --laranja: #FF6A13; --laranja-esc: #C2410C; }
+  html, body {
+    margin: 0; padding: 0; background: #F7F7F5; color: #14213D;
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; font-size: 16px;
+    -webkit-user-select: none; user-select: none;
+  }
+  input { -webkit-user-select: text; user-select: text; }
+  #app { max-width: 480px; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column; background: #fff; }
+
+  header {
+    background: #fff; padding: 10px 16px; border-bottom: 1px solid #ECEEF3;
+    display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 10;
+  }
+  header .op-info { font-size: 12px; color: #7B8296; line-height: 1.4; }
+  header .op-info b { color: #14213D; font-size: 15px; }
+  header .clock { font-size: 15px; font-weight: 700; color: var(--laranja); font-variant-numeric: tabular-nums; }
+  header .sair { font-size: 11px; color: #7B8296; text-decoration: underline; margin-left: 8px; }
+
+  #barra-status { padding: 7px 16px; font-size: 12px; text-align: center; display: none; font-weight: 600; }
+  #barra-status.erro { display: block; background: #FEF2F2; color: #DC2626; }
+  #barra-status.ok { display: block; background: #F0FDF4; color: #15803D; }
+
+  /* LOGIN */
+  #tela-login { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 32px 24px; gap: 14px; }
+  #tela-login h1 { font-size: 22px; font-weight: 800; margin: 0 0 4px; }
+  #tela-login h1 .mk { color: #fff; background: var(--laranja); padding: 1px 7px; border-radius: 6px; }
+  #tela-login p { color: #7B8296; font-size: 14px; margin: 0 0 8px; text-align: center; }
+  #tela-login input { width: 100%; padding: 16px; font-size: 17px; border-radius: 12px; border: 1.5px solid #ECEEF3; background: #F7F8FB; text-align: center; }
+  #tela-login input:focus { outline: none; border-color: var(--azul); }
+  #tela-login button { width: 100%; padding: 16px; font-size: 16px; font-weight: 700; border-radius: 12px; border: none; background: var(--laranja); color: #fff; cursor: pointer; }
+  #erro-login { color: #DC2626; font-size: 13px; min-height: 18px; }
+
+  /* ABAS */
+  #abas { display: flex; border-bottom: 1.5px solid #ECEEF3; background: #fff; }
+  .aba { flex: 1; text-align: center; padding: 13px 4px; font-size: 14px; font-weight: 700; color: #7B8296; cursor: pointer; border-bottom: 2.5px solid transparent; }
+  .aba.ativa { color: var(--laranja); border-bottom-color: var(--laranja); }
+
+  /* SELETOR TIPO (movimentação) */
+  #tipo-selector { display: flex; gap: 8px; padding: 12px 16px; }
+  .tipo-btn { flex: 1; padding: 14px 4px; border-radius: 11px; border: 1.5px solid #ECEEF3; background: #fff; color: #7B8296; font-size: 13px; font-weight: 700; text-align: center; cursor: pointer; }
+  .tipo-btn.ativo[data-tipo="ENTRADA"] { background: #DCFCE7; border-color: #15803D; color: #15803D; }
+  .tipo-btn.ativo[data-tipo="SAIDA"] { background: #FFE4DE; border-color: #C2410C; color: #C2410C; }
+  .tipo-btn.ativo[data-tipo="TRANSFERENCIA"] { background: #DBEAFE; border-color: #1D4ED8; color: #1D4ED8; }
+
+  /* CARD DE BIPAGEM */
+  .painel-bipagem { padding: 0 16px 14px; }
+  .card-bipagem { background: #fff; border: 1.5px solid #ECEEF3; border-radius: 16px; padding: 18px; text-align: center; box-shadow: 0 1px 4px rgba(20,33,61,0.05); }
+  .label-passo { font-size: 12px; color: #7B8296; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; font-weight: 700; }
+  .info-contexto { font-size: 13px; color: #15803D; min-height: 20px; margin-bottom: 8px; font-weight: 600; }
+  .campo-scan { width: 100%; padding: 18px; font-size: 21px; text-align: center; border-radius: 12px; border: 2px solid #ECEEF3; background: #F7F8FB; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .campo-scan:focus { outline: none; border-color: var(--laranja); }
+  .campo-scan.qtd { font-size: 28px; }
+  .campo-scan.enviando { opacity: 0.55; }
+
+  .steps-chips { display: flex; gap: 6px; justify-content: center; margin-top: 14px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 5px 11px; border-radius: 20px; background: #F3F4F8; color: #7B8296; font-weight: 600; }
+  .chip.feito { background: #DCFCE7; color: #15803D; }
+  .chip.atual { background: #FFF1E6; color: var(--laranja-esc); }
+
+  .btn-secundario { margin-top: 12px; width: 100%; padding: 11px; border-radius: 10px; border: 1.5px solid #FECACA; background: transparent; color: #DC2626; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .btn-acao { margin-top: 12px; width: 100%; padding: 13px; border-radius: 10px; border: none; background: var(--azul); color: #fff; font-size: 14px; font-weight: 700; cursor: pointer; }
+
+  /* MODAL */
+  .modal-fundo { position: fixed; inset: 0; background: rgba(20,33,61,0.5); display: none; align-items: center; justify-content: center; padding: 20px; z-index: 50; }
+  .modal-fundo.aberto { display: flex; }
+  .modal-box { background: #fff; border-radius: 16px; padding: 20px; width: 100%; max-width: 380px; }
+  .modal-box h3 { margin: 0 0 6px; font-size: 16px; }
+  .modal-box p { font-size: 13px; color: #7B8296; margin: 0 0 14px; }
+  .modal-box input { width: 100%; padding: 14px; font-size: 15px; border-radius: 10px; border: 1.5px solid #ECEEF3; background: #F7F8FB; margin-bottom: 12px; }
+  .modal-box .row-botoes { display: flex; gap: 10px; }
+  .modal-box button { flex: 1; padding: 14px; border-radius: 10px; border: none; font-size: 14px; font-weight: 700; cursor: pointer; }
+  .btn-confirmar { background: var(--laranja); color: #fff; }
+  .btn-cancelar { background: #F3F4F8; color: #14213D; }
+
+  /* LISTAS */
+  .lista-recentes { flex: 1; overflow-y: auto; padding: 0 16px 24px; }
+  .lista-recentes h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #7B8296; margin: 16px 0 8px; display: flex; justify-content: space-between; font-weight: 700; }
+  .lista-recentes h2 .pend { color: var(--laranja-esc); }
+  .item-mov { background: #fff; border: 1px solid #ECEEF3; border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; display: flex; align-items: center; gap: 10px; }
+  .item-mov.pendente-sync { border-color: #FDBA74; }
+  .item-mov .tag { font-size: 10px; font-weight: 700; padding: 3px 7px; border-radius: 6px; white-space: nowrap; }
+  .tag.ENTRADA { background: #DCFCE7; color: #15803D; }
+  .tag.SAIDA { background: #FFE4DE; color: #C2410C; }
+  .tag.TRANSFERENCIA { background: #DBEAFE; color: #1D4ED8; }
+  .tag.INVENTARIO { background: #EDE9FE; color: #6D28D9; }
+  .item-mov .info { flex: 1; min-width: 0; }
+  .item-mov .info .titulo { font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item-mov .info .detalhes { font-size: 11.5px; color: #7B8296; }
+  .item-mov .qtd { font-size: 16px; font-weight: 800; color: var(--laranja-esc); font-variant-numeric: tabular-nums; }
+  .item-mov .status-icone { font-size: 15px; }
+  .msg-vazio { text-align: center; color: #7B8296; font-size: 13px; padding: 26px 0; }
+
+  /* divergência inline no inventário */
+  .selo-divergencia { font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 20px; }
+  .selo-divergencia.ok { background: #DCFCE7; color: #15803D; }
+  .selo-divergencia.dif { background: #FEF2F2; color: #DC2626; }
+
+  .oculto { display: none !important; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- LOGIN -->
+  <div id="tela-login">
+    <h1>Coletor <span class="mk">JMK</span></h1>
+    <p>Entre com seu usuário para iniciar o turno.</p>
+    <input id="input-login" type="text" placeholder="Usuário" autocomplete="off">
+    <input id="input-senha" type="password" placeholder="Senha" autocomplete="off">
+    <div id="erro-login"></div>
+    <button id="btn-entrar">Entrar</button>
+  </div>
+
+  <!-- PRINCIPAL -->
+  <div id="tela-principal" class="oculto" style="display:flex; flex-direction:column; flex:1;">
+    <header>
+      <div class="op-info">Operador<br><b id="nome-operador"></b><span class="sair" id="btn-sair">sair</span></div>
+      <div class="clock" id="relogio">--:--:--</div>
+    </header>
+    <div id="barra-status"></div>
+
+    <div id="abas">
+      <div class="aba ativa" data-aba="movimentacao">Movimentação</div>
+      <div class="aba" data-aba="inventario">Inventário</div>
+    </div>
+
+    <!-- ABA MOVIMENTAÇÃO -->
+    <div id="conteudo-movimentacao">
+      <div id="tipo-selector">
+        <div class="tipo-btn" data-tipo="ENTRADA">ENTRADA</div>
+        <div class="tipo-btn" data-tipo="SAIDA">SAÍDA</div>
+        <div class="tipo-btn" data-tipo="TRANSFERENCIA">TRANSFERÊNCIA</div>
+      </div>
+      <div class="painel-bipagem">
+        <div class="card-bipagem">
+          <div class="label-passo" id="mov-label">Selecione o tipo de operação acima</div>
+          <div class="info-contexto" id="mov-contexto"></div>
+          <input id="mov-scan" class="campo-scan" type="text" placeholder="Aguardando..." disabled autocomplete="off">
+          <div class="steps-chips" id="mov-chips"></div>
+        </div>
+        <button id="mov-cancelar" class="btn-secundario oculto">Cancelar bipagem atual</button>
+      </div>
+      <div class="lista-recentes">
+        <h2><span>Movimentos recentes</span><span class="pend" id="mov-pendentes"></span></h2>
+        <div id="mov-lista"></div>
+        <div class="msg-vazio" id="mov-vazio">Nenhum movimento registrado neste turno.</div>
+      </div>
+    </div>
+
+    <!-- ABA INVENTÁRIO -->
+    <div id="conteudo-inventario" class="oculto">
+      <div class="painel-bipagem" style="padding-top:14px;">
+        <div class="card-bipagem">
+          <div class="label-passo" id="inv-label">Bipe a posição para iniciar a contagem</div>
+          <div class="info-contexto" id="inv-contexto"></div>
+          <input id="inv-scan" class="campo-scan" type="text" placeholder="Bipe a posição..." autocomplete="off">
+          <div class="steps-chips" id="inv-chips"></div>
+        </div>
+        <button id="inv-finalizar" class="btn-acao oculto">Finalizar posição</button>
+        <button id="inv-cancelar" class="btn-secundario oculto">Cancelar contagem da posição</button>
+      </div>
+      <div class="lista-recentes">
+        <h2><span>Itens contados</span><span class="pend" id="inv-pendentes"></span></h2>
+        <div id="inv-lista"></div>
+        <div class="msg-vazio" id="inv-vazio">Nenhuma contagem registrada neste turno.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL PRODUTO NOVO -->
+<div class="modal-fundo" id="modal-produto">
+  <div class="modal-box">
+    <h3>Produto não cadastrado</h3>
+    <p>O código <b id="modal-sku"></b> não foi encontrado. Digite a descrição para cadastrá-lo.</p>
+    <input id="modal-descricao" type="text" placeholder="Descrição do produto" autocomplete="off">
+    <div class="row-botoes">
+      <button class="btn-cancelar" id="modal-cancelar">Cancelar</button>
+      <button class="btn-confirmar" id="modal-confirmar">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =============================================================
+   COLETOR JMK - Movimentação + Inventário, tempo real
+   ============================================================= */
+let operadorNome = null;
+
+// ---------- utilidades ----------
+function horaBrasilia() {
+  return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date());
+}
+function dataHoraBrasiliaISO() {
+  const partes = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).formatToParts(new Date());
+  const o = {}; partes.forEach(p => o[p.type] = p.value);
+  return `${o.year}-${o.month}-${o.day} ${o.hour}:${o.minute}:${o.second}`;
+}
+setInterval(() => document.getElementById('relogio').textContent = horaBrasilia(), 1000);
+
+function gerarUUID() {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+  });
+}
+function mostrarStatus(msg, tipo) {
+  const el = document.getElementById('barra-status');
+  el.textContent = msg; el.className = tipo;
+  clearTimeout(mostrarStatus._t);
+  mostrarStatus._t = setTimeout(() => el.className = '', 3000);
+}
+function extrairNumeroNF(chave) {
+  if (chave.length !== 44 || !/^\d+$/.test(chave)) return null;
+  const n = chave.slice(25, 34).replace(/^0+/, '');
+  return n || '0';
+}
+
+// ---------- login ----------
+document.getElementById('btn-entrar').addEventListener('click', fazerLogin);
+['input-login', 'input-senha'].forEach(id => document.getElementById(id).addEventListener('keydown', e => { if (e.key === 'Enter') fazerLogin(); }));
+
+async function fazerLogin() {
+  const login = document.getElementById('input-login').value.trim();
+  const senha = document.getElementById('input-senha').value;
+  const erroEl = document.getElementById('erro-login');
+  erroEl.textContent = '';
+  if (!login || !senha) return;
+  try {
+    const resp = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ login, senha }) });
+    if (!resp.ok) { erroEl.textContent = (await resp.json()).erro || 'Falha no login.'; return; }
+    const d = await resp.json();
+    operadorNome = d.nome_completo;
+    document.getElementById('nome-operador').textContent = operadorNome;
+    document.getElementById('tela-login').classList.add('oculto');
+    document.getElementById('tela-principal').classList.remove('oculto');
+  } catch (e) { erroEl.textContent = 'Sem conexão com o servidor. Verifique o Wi-Fi.'; }
+}
+
+document.getElementById('btn-sair').addEventListener('click', async () => {
+  const pend = movHistorico.filter(m => m.status !== 'enviado').length + invHistorico.filter(m => m.status !== 'enviado').length;
+  if (pend > 0 && !confirm(`Existem ${pend} registro(s) não sincronizado(s). Sair mesmo assim?`)) return;
+  await fetch('/api/logout', { method: 'POST' });
+  location.reload();
+});
+
+// ---------- abas ----------
+document.querySelectorAll('.aba').forEach(a => a.addEventListener('click', () => {
+  document.querySelectorAll('.aba').forEach(x => x.classList.remove('ativa'));
+  a.classList.add('ativa');
+  document.getElementById('conteudo-movimentacao').classList.toggle('oculto', a.dataset.aba !== 'movimentacao');
+  document.getElementById('conteudo-inventario').classList.toggle('oculto', a.dataset.aba !== 'inventario');
+  if (a.dataset.aba === 'inventario') document.getElementById('inv-scan').focus();
+}));
+
+// ---------- fila de reenvio genérica ----------
+async function enviarComRetry(item, url) {
+  try {
+    const resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(item.payload) });
+    if (resp.ok) {
+      const d = await resp.json();
+      item.status = 'enviado';
+      item.resposta = d;
+      mostrarStatus('Registro salvo.', 'ok');
+    } else {
+      const err = await resp.json().catch(() => ({}));
+      if (resp.status === 400 && err.erro) {
+        item.status = 'erro_definitivo';
+        item.erroMsg = err.erro;
+        mostrarStatus(`Rejeitado: ${err.erro}`, 'erro');
+      } else {
+        item.status = 'pendente';
+        mostrarStatus('Falha ao salvar. Vai tentar de novo.', 'erro');
+      }
+    }
+  } catch (e) {
+    item.status = 'pendente';
+    mostrarStatus('Sem conexão. Registro ficará pendente.', 'erro');
+  }
+  renderizarMovLista(); renderizarInvLista();
+}
+
+setInterval(() => {
+  movHistorico.filter(m => m.status === 'pendente').forEach(m => { m.status = 'enviando'; enviarComRetry(m, '/api/movimento'); });
+  invHistorico.filter(m => m.status === 'pendente').forEach(m => { m.status = 'enviando'; enviarComRetry(m, '/api/inventario/contagem'); });
+}, 15000);
+
+/* =============================================================
+   MOVIMENTAÇÃO
+   ============================================================= */
+let movTipo = null, movPassos = [], movPassoIdx = 0, movAtual = {};
+let movHistorico = [];
+
+const MOV_FLUXOS = {
+  ENTRADA: ['nota_fiscal', 'produto', 'posicao_destino', 'quantidade'],
+  SAIDA: ['nota_fiscal', 'produto', 'posicao_origem', 'quantidade'],
+  TRANSFERENCIA: ['nota_fiscal', 'produto', 'posicao_origem', 'posicao_destino', 'quantidade'],
+};
+const MOV_LABELS = {
+  nota_fiscal: 'Bipe a chave de acesso da NF', produto: 'Bipe o produto',
+  posicao_origem: 'Bipe a posição de origem', posicao_destino: 'Bipe a posição de destino',
+  quantidade: 'Digite a quantidade e confirme',
+};
+const CHIP_LABELS = { nota_fiscal: 'NF', produto: 'produto', posicao_origem: 'origem', posicao_destino: 'destino', quantidade: 'qtd' };
+
+document.querySelectorAll('.tipo-btn').forEach(btn => btn.addEventListener('click', () => {
+  if (movPassoIdx > 0 && !confirm('Bipagem em andamento será descartada. Continuar?')) return;
+  document.querySelectorAll('.tipo-btn').forEach(b => b.classList.remove('ativo'));
+  btn.classList.add('ativo');
+  movTipo = btn.dataset.tipo;
+  movIniciar();
+}));
+
+function movIniciar() {
+  movPassos = MOV_FLUXOS[movTipo]; movPassoIdx = 0; movAtual = { tipo: movTipo };
+  movAtualizarTela();
+}
+
+function movAtualizarTela() {
+  const campo = document.getElementById('mov-scan');
+  const label = document.getElementById('mov-label');
+  const ctx = document.getElementById('mov-contexto');
+  const chips = document.getElementById('mov-chips');
+  const btnCancelar = document.getElementById('mov-cancelar');
+
+  if (!movTipo) {
+    campo.disabled = true; campo.value = ''; campo.placeholder = 'Aguardando...';
+    label.textContent = 'Selecione o tipo de operação acima';
+    ctx.textContent = ''; chips.innerHTML = ''; btnCancelar.classList.add('oculto');
+    return;
+  }
+  const passo = movPassos[movPassoIdx];
+  campo.disabled = false; campo.value = '';
+  campo.className = 'campo-scan' + (passo === 'quantidade' ? ' qtd' : '');
+  campo.inputMode = passo === 'quantidade' ? 'numeric' : 'text';
+  campo.placeholder = passo === 'quantidade' ? '0' : 'Bipe aqui...';
+  label.textContent = MOV_LABELS[passo];
+
+  const partes = [];
+  if (movAtual.numero_nf) partes.push(`NF ${movAtual.numero_nf}`);
+  if (movAtual.descricao) partes.push(`${movAtual.sku} — ${movAtual.descricao}`);
+  ctx.textContent = partes.join(' · ');
+
+  chips.innerHTML = movPassos.map((p, i) => {
+    const cls = i < movPassoIdx ? 'feito' : (i === movPassoIdx ? 'atual' : '');
+    return `<span class="chip ${cls}">${CHIP_LABELS[p]}</span>`;
+  }).join('');
+  btnCancelar.classList.remove('oculto');
+  campo.focus();
+}
+
+document.getElementById('mov-cancelar').addEventListener('click', () => { movPassoIdx = 0; movAtual = { tipo: movTipo }; movAtualizarTela(); });
+
+document.getElementById('mov-scan').addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  movProcessar(e.target.value.trim());
+});
+
+async function movProcessar(valor) {
+  if (!valor) return;
+  const passo = movPassos[movPassoIdx];
+
+  if (passo === 'nota_fiscal') {
+    const numero = extrairNumeroNF(valor);
+    if (!numero) { alert('Chave inválida: precisa ter 44 dígitos numéricos.'); document.getElementById('mov-scan').value = ''; return; }
+    movAtual.chave_nfe = valor; movAtual.numero_nf = numero;
+    movPassoIdx++; movAtualizarTela(); return;
+  }
+  if (passo === 'produto') {
+    await resolverProduto(valor, (sku, descricao) => {
+      movAtual.sku = sku; movAtual.descricao = descricao;
+      movPassoIdx++; movAtualizarTela();
+    }, document.getElementById('mov-scan'));
+    return;
+  }
+  if (passo === 'posicao_origem') { movAtual.posicao_origem = valor; movPassoIdx++; movAtualizarTela(); return; }
+  if (passo === 'posicao_destino') { movAtual.posicao_destino = valor; movPassoIdx++; movAtualizarTela(); return; }
+  if (passo === 'quantidade') {
+    const qtd = parseFloat(valor.replace(',', '.'));
+    if (isNaN(qtd) || qtd <= 0) { alert('Quantidade inválida.'); document.getElementById('mov-scan').value = ''; return; }
+    movAtual.quantidade = qtd;
+    movConfirmar();
+  }
+}
+
+function movConfirmar() {
+  const item = {
+    payload: {
+      id_movimento: gerarUUID(),
+      data_hora_brasilia: dataHoraBrasiliaISO(),
+      tipo_operacao: movAtual.tipo,
+      chave_nfe: movAtual.chave_nfe,
+      sku: movAtual.sku,
+      descricao_produto: movAtual.descricao,
+      quantidade: movAtual.quantidade,
+      posicao_origem: movAtual.posicao_origem || null,
+      posicao_destino: movAtual.posicao_destino || null,
+    },
+    exibicao: { ...movAtual, numero_nf: movAtual.numero_nf, hora: dataHoraBrasiliaISO().split(' ')[1] },
+    status: 'enviando',
+  };
+  movHistorico.unshift(item);
+  renderizarMovLista();
+  movPassoIdx = 0; movAtual = { tipo: movTipo }; movAtualizarTela();
+  enviarComRetry(item, '/api/movimento');
+}
+
+function renderizarMovLista() {
+  const box = document.getElementById('mov-lista');
+  const vazio = document.getElementById('mov-vazio');
+  const pend = movHistorico.filter(m => m.status !== 'enviado' && m.status !== 'erro_definitivo').length;
+  document.getElementById('mov-pendentes').textContent = pend ? `${pend} pendente(s)` : '';
+  vazio.style.display = movHistorico.length ? 'none' : 'block';
+  box.innerHTML = movHistorico.slice(0, 30).map(m => {
+    const e = m.exibicao;
+    let det = '';
+    if (e.tipo === 'ENTRADA') det = `→ ${e.posicao_destino}`;
+    if (e.tipo === 'SAIDA') det = `${e.posicao_origem} →`;
+    if (e.tipo === 'TRANSFERENCIA') det = `${e.posicao_origem} → ${e.posicao_destino}`;
+    const icone = m.status === 'enviado' ? '✓' : (m.status === 'enviando' ? '…' : (m.status === 'erro_definitivo' ? '✕' : '⚠'));
+    return `<div class="item-mov ${m.status !== 'enviado' ? 'pendente-sync' : ''}">
+      <span class="tag ${e.tipo}">${e.tipo === 'TRANSFERENCIA' ? 'TRANSF' : e.tipo}</span>
+      <div class="info">
+        <div class="titulo">${e.descricao || e.sku}</div>
+        <div class="detalhes">NF ${e.numero_nf} · ${e.sku} · ${det} · ${e.hora}</div>
+      </div>
+      <div class="qtd">${e.quantidade}</div>
+      <div class="status-icone">${icone}</div>
+    </div>`;
+  }).join('');
+}
+
+/* =============================================================
+   INVENTÁRIO
+   ============================================================= */
+// fluxo: bipa posição -> loop [bipa produto -> digita qtd] -> Finalizar posição
+let invPosicao = null, invPasso = 'posicao'; // posicao | produto | quantidade
+let invProdutoAtual = {};
+let invHistorico = [];
+
+const invScan = document.getElementById('inv-scan');
+invScan.addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  invProcessar(e.target.value.trim());
+});
+
+function invAtualizarTela() {
+  const label = document.getElementById('inv-label');
+  const ctx = document.getElementById('inv-contexto');
+  const chips = document.getElementById('inv-chips');
+  const btnFinalizar = document.getElementById('inv-finalizar');
+  const btnCancelar = document.getElementById('inv-cancelar');
+
+  invScan.value = '';
+  invScan.className = 'campo-scan' + (invPasso === 'quantidade' ? ' qtd' : '');
+  invScan.inputMode = invPasso === 'quantidade' ? 'numeric' : 'text';
+
+  if (invPasso === 'posicao') {
+    label.textContent = 'Bipe a posição para iniciar a contagem';
+    invScan.placeholder = 'Bipe a posição...';
+    ctx.textContent = '';
+    chips.innerHTML = '';
+    btnFinalizar.classList.add('oculto');
+    btnCancelar.classList.add('oculto');
+  } else if (invPasso === 'produto') {
+    label.textContent = 'Bipe o produto (ou finalize a posição)';
+    invScan.placeholder = 'Bipe o produto...';
+    ctx.textContent = `Contando: ${invPosicao}`;
+    chips.innerHTML = `<span class="chip feito">posição</span><span class="chip atual">produto</span><span class="chip">qtd</span>`;
+    btnFinalizar.classList.remove('oculto');
+    btnCancelar.classList.remove('oculto');
+  } else {
+    label.textContent = 'Digite a quantidade contada';
+    invScan.placeholder = '0';
+    ctx.textContent = `${invPosicao} · ${invProdutoAtual.sku} — ${invProdutoAtual.descricao}`;
+    chips.innerHTML = `<span class="chip feito">posição</span><span class="chip feito">produto</span><span class="chip atual">qtd</span>`;
+    btnFinalizar.classList.add('oculto');
+    btnCancelar.classList.remove('oculto');
+  }
+  invScan.focus();
+}
+
+async function invProcessar(valor) {
+  if (!valor) return;
+
+  if (invPasso === 'posicao') {
+    invPosicao = valor;
+    invPasso = 'produto';
+    invAtualizarTela();
+    return;
+  }
+  if (invPasso === 'produto') {
+    await resolverProduto(valor, (sku, descricao) => {
+      invProdutoAtual = { sku, descricao };
+      invPasso = 'quantidade';
+      invAtualizarTela();
+    }, invScan);
+    return;
+  }
+  if (invPasso === 'quantidade') {
+    const qtd = parseFloat(valor.replace(',', '.'));
+    if (isNaN(qtd) || qtd < 0) { alert('Quantidade inválida.'); invScan.value = ''; return; }
+    invConfirmarItem(qtd);
+  }
+}
+
+function invConfirmarItem(qtd) {
+  const item = {
+    payload: {
+      id_contagem: gerarUUID(),
+      data_hora: dataHoraBrasiliaISO(),
+      posicao: invPosicao,
+      sku: invProdutoAtual.sku,
+      qtd_contada: qtd,
+    },
+    exibicao: { posicao: invPosicao, sku: invProdutoAtual.sku, descricao: invProdutoAtual.descricao, qtd, hora: dataHoraBrasiliaISO().split(' ')[1] },
+    status: 'enviando',
+  };
+  invHistorico.unshift(item);
+  renderizarInvLista();
+  // volta pro passo produto, mesma posição (contagem de vários itens na mesma posição)
+  invPasso = 'produto'; invProdutoAtual = {};
+  invAtualizarTela();
+  enviarComRetry(item, '/api/inventario/contagem');
+}
+
+document.getElementById('inv-finalizar').addEventListener('click', () => {
+  mostrarStatus(`Posição ${invPosicao} finalizada.`, 'ok');
+  invPosicao = null; invPasso = 'posicao'; invProdutoAtual = {};
+  invAtualizarTela();
+});
+document.getElementById('inv-cancelar').addEventListener('click', () => {
+  invPosicao = null; invPasso = 'posicao'; invProdutoAtual = {};
+  invAtualizarTela();
+});
+
+function renderizarInvLista() {
+  const box = document.getElementById('inv-lista');
+  const vazio = document.getElementById('inv-vazio');
+  const pend = invHistorico.filter(m => m.status !== 'enviado' && m.status !== 'erro_definitivo').length;
+  document.getElementById('inv-pendentes').textContent = pend ? `${pend} pendente(s)` : '';
+  vazio.style.display = invHistorico.length ? 'none' : 'block';
+  box.innerHTML = invHistorico.slice(0, 30).map(m => {
+    const e = m.exibicao;
+    const icone = m.status === 'enviado' ? '✓' : (m.status === 'enviando' ? '…' : (m.status === 'erro_definitivo' ? '✕' : '⚠'));
+    let selo = '';
+    if (m.resposta && m.resposta.status) {
+      selo = m.resposta.status === 'SEM_DIVERGENCIA'
+        ? '<span class="selo-divergencia ok">confere ✓</span>'
+        : `<span class="selo-divergencia dif">diverg. ${m.resposta.divergencia > 0 ? '+' : ''}${m.resposta.divergencia}</span>`;
+    }
+    return `<div class="item-mov ${m.status !== 'enviado' ? 'pendente-sync' : ''}">
+      <span class="tag INVENTARIO">INV</span>
+      <div class="info">
+        <div class="titulo">${e.descricao || e.sku}</div>
+        <div class="detalhes">${e.posicao} · ${e.sku} · ${e.hora} ${selo}</div>
+      </div>
+      <div class="qtd">${e.qtd}</div>
+      <div class="status-icone">${icone}</div>
+    </div>`;
+  }).join('');
+}
+
+/* =============================================================
+   PRODUTO (compartilhado pelas duas abas)
+   ============================================================= */
+let produtoCallback = null;
+
+async function resolverProduto(codigo, aoResolver, campoOrigem) {
+  campoOrigem.disabled = true; campoOrigem.classList.add('enviando');
+  try {
+    const resp = await fetch(`/api/produtos/${encodeURIComponent(codigo)}`);
+    if (resp.ok) {
+      const p = await resp.json();
+      aoResolver(p.sku, p.descricao);
+    } else if (resp.status === 404) {
+      produtoCallback = aoResolver;
+      document.getElementById('modal-sku').textContent = codigo;
+      document.getElementById('modal-descricao').value = '';
+      document.getElementById('modal-produto').classList.add('aberto');
+      document.getElementById('modal-produto').dataset.sku = codigo;
+      setTimeout(() => document.getElementById('modal-descricao').focus(), 60);
+    } else {
+      mostrarStatus('Erro ao consultar produto.', 'erro');
+    }
+  } catch (e) {
+    mostrarStatus('Sem conexão para consultar o produto.', 'erro');
+  } finally {
+    campoOrigem.disabled = false; campoOrigem.classList.remove('enviando');
+  }
+}
+
+document.getElementById('modal-cancelar').addEventListener('click', () => {
+  document.getElementById('modal-produto').classList.remove('aberto');
+  produtoCallback = null;
+});
+document.getElementById('modal-confirmar').addEventListener('click', confirmarProdutoNovo);
+document.getElementById('modal-descricao').addEventListener('keydown', e => { if (e.key === 'Enter') confirmarProdutoNovo(); });
+
+async function confirmarProdutoNovo() {
+  const descricao = document.getElementById('modal-descricao').value.trim();
+  const sku = document.getElementById('modal-produto').dataset.sku;
+  if (!descricao) { alert('Digite a descrição.'); return; }
+  try {
+    const resp = await fetch('/api/produtos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sku, descricao }) });
+    const p = await resp.json();
+    document.getElementById('modal-produto').classList.remove('aberto');
+    if (produtoCallback) { produtoCallback(p.sku, p.descricao); produtoCallback = null; }
+  } catch (e) { mostrarStatus('Sem conexão para cadastrar o produto.', 'erro'); }
+}
+
+invAtualizarTela();
+</script>
+</body>
+</html>

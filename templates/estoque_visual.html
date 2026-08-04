@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Visualização de Estoque - JMK</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: #F3F4F8;
+    color: #1F2430;
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  }
+  .mono { font-variant-numeric: tabular-nums; font-family: "SFMono-Regular", Consolas, monospace; }
+
+  #app { max-width: 1400px; margin: 0 auto; padding: 20px 24px 60px; }
+
+  header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 18px;
+  }
+  header h1 { font-size: 20px; font-weight: 600; margin: 0; }
+  nav a {
+    font-size: 13px; color: #5A5F72; text-decoration: none; margin-left: 16px;
+    padding: 6px 12px; border-radius: 8px;
+  }
+  nav a:hover { background: #E8E9F0; }
+  nav a.ativo { background: #0B4F9E; color: #fff; }
+  nav a:hover { background: #FFF1E8; color: #FF6A13; }
+
+  .grid-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .kpi {
+    background: #fff; border-radius: 12px; padding: 16px 18px;
+    border-top: 3px solid #ccc; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  .kpi.azul { border-top-color: #3B82F6; }
+  .kpi.coral { border-top-color: #EF4444; }
+  .kpi.ambar { border-top-color: #F59E0B; }
+  .kpi .label { font-size: 11px; color: #8A8FA3; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+  .kpi .valor { font-size: 28px; font-weight: 700; margin-top: 4px; }
+  .kpi .extra { font-size: 12px; color: #8A8FA3; margin-top: 2px; }
+
+  #ruas-pills { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+  .pill-rua {
+    display: flex; align-items: center; gap: 6px; background: #fff;
+    border: 1px solid #E5E7F0; border-radius: 20px; padding: 6px 12px 6px 8px;
+    font-size: 12px; cursor: pointer; transition: all 0.15s;
+  }
+  .pill-rua:hover { border-color: #FF6A13; transform: translateY(-1px); }
+  .pill-rua.selecionada { background: #0B4F9E; color: #fff; border-color: #0B4F9E; }
+  .pill-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .pill-rua b { font-weight: 700; }
+
+  .painel {
+    background: #fff; border-radius: 14px; padding: 18px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06); margin-bottom: 16px;
+  }
+  .painel h2 {
+    font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+    color: #5A5F72; margin: 0 0 14px; display: flex; align-items: center; gap: 6px;
+  }
+  .painel h2 .marca { width: 3px; height: 14px; background: #FF6A13; border-radius: 2px; }
+
+  /* visão geral (todas as ruas, resumida) */
+  .overview-rua { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+  .overview-rua .rotulo { width: 30px; font-size: 11px; font-weight: 700; color: #5A5F72; text-align: right; flex-shrink: 0; }
+  .overview-faixa { display: flex; gap: 3px; flex: 1; cursor: pointer; }
+  .overview-celula { flex: 1; height: 22px; border-radius: 4px; min-width: 4px; }
+
+  /* grid detalhado */
+  #detalhe-vazio { color: #8A8FA3; font-size: 13px; text-align: center; padding: 30px 0; }
+  .lado-bloco { margin-bottom: 20px; }
+  .lado-titulo { font-size: 12px; font-weight: 700; color: #5A5F72; margin-bottom: 8px; }
+  .grid-lado {
+    display: grid; grid-template-columns: repeat(24, 1fr); gap: 3px;
+  }
+  .celula-posicao {
+    aspect-ratio: 1; border-radius: 5px; cursor: pointer; position: relative;
+    transition: transform 0.1s;
+  }
+  .celula-posicao:hover { transform: scale(1.15); z-index: 10; }
+  .celula-livre { background: #EEF0F6; border: 1px solid #E0E2EC; }
+  .celula-ocupada-A1 { background: linear-gradient(160deg, #F87171, #DC2626); }
+  .celula-ocupada-A2 { background: linear-gradient(160deg, #F87171, #DC2626); }
+  .celula-ocupada.par { background: linear-gradient(160deg, #60A5FA, #2563EB); }
+
+  #tooltip {
+    position: fixed; background: #1F2430; color: #fff; padding: 8px 12px;
+    border-radius: 8px; font-size: 12px; pointer-events: none; z-index: 100;
+    display: none; max-width: 260px; box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  }
+  #tooltip .tt-codigo { font-weight: 700; margin-bottom: 2px; }
+  #tooltip .tt-desc { color: #C4C7D4; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1><span style="color:#0B4F9E">J</span><span style="color:#fff;background:#FF6A13;padding:1px 6px;border-radius:5px;margin-right:8px;">MK</span>Visualização de estoque</h1>
+    <nav>
+      <a href="/dashboard">Painel gerencial</a>
+      <a href="/estoque-visual" class="ativo">Ocupação por rua</a>
+      <a href="/coletor">Coletor</a>
+    </nav>
+  </header>
+
+  <div class="grid-kpis" id="kpis"></div>
+
+  <div id="ruas-pills"></div>
+
+  <div class="painel">
+    <h2><span class="marca"></span>Visão geral · todas as ruas (clique p/ abrir)</h2>
+    <div id="overview"></div>
+  </div>
+
+  <div class="painel">
+    <h2><span class="marca"></span><span id="titulo-detalhe">Selecione uma rua acima</span></h2>
+    <div id="detalhe"><div id="detalhe-vazio">Clique em uma rua na visão geral ou nos chips acima para ver as posições.</div></div>
+  </div>
+</div>
+
+<div id="tooltip"></div>
+
+<script>
+let ruaSelecionada = null;
+let resumoRuas = [];
+
+async function api(caminho) {
+  const resp = await fetch(caminho);
+  if (!resp.ok) throw new Error(`Erro em ${caminho}`);
+  return resp.json();
+}
+
+function corPorPct(pct) {
+  if (pct === 0) return '#EEF0F6';
+  if (pct < 25) return '#93C5FD';
+  if (pct < 50) return '#60A5FA';
+  if (pct < 75) return '#FBBF24';
+  return '#EF4444';
+}
+
+async function carregarResumo() {
+  resumoRuas = await api('/api/dashboard/ruas-resumo');
+
+  const totalMapeadas = resumoRuas.reduce((s, r) => s + r.total, 0);
+  const totalOcupadas = resumoRuas.reduce((s, r) => s + r.ocupadas, 0);
+  const totalLivres = totalMapeadas - totalOcupadas;
+  const pctGeral = totalMapeadas ? ((totalOcupadas / totalMapeadas) * 100).toFixed(1) : 0;
+
+  document.getElementById('kpis').innerHTML = `
+    <div class="kpi azul">
+      <div class="label">Posições mapeadas</div>
+      <div class="valor mono">${totalMapeadas.toLocaleString('pt-BR')}</div>
+      <div class="extra">dentro do range observado</div>
+    </div>
+    <div class="kpi coral">
+      <div class="label">Ocupadas</div>
+      <div class="valor mono">${totalOcupadas.toLocaleString('pt-BR')}</div>
+      <div class="extra">${pctGeral}% do total</div>
+    </div>
+    <div class="kpi ambar">
+      <div class="label">Livres</div>
+      <div class="valor mono">${totalLivres.toLocaleString('pt-BR')}</div>
+      <div class="extra">cadastro real · disponível p/ alocação</div>
+    </div>
+  `;
+
+  document.getElementById('ruas-pills').innerHTML = resumoRuas.map(r => `
+    <div class="pill-rua ${r.rua === ruaSelecionada ? 'selecionada' : ''}" onclick="selecionarRua('${r.rua}')">
+      <span class="pill-dot" style="background:${corPorPct(r.pct)}"></span>
+      Rua ${r.rua} · <b>${r.pct}%</b> ocupada (${r.ocupadas}/${r.total})
+    </div>
+  `).join('');
+
+  document.getElementById('overview').innerHTML = resumoRuas.map(r => {
+    // faixa visual simplificada: divide a rua em 20 blocos proporcionais à ocupação
+    const blocos = 20;
+    const ocupados = Math.round((r.pct / 100) * blocos);
+    let celulas = '';
+    for (let i = 0; i < blocos; i++) {
+      const cor = i < ocupados ? (i % 2 === 0 ? '#F87171' : '#60A5FA') : '#EEF0F6';
+      celulas += `<div class="overview-celula" style="background:${cor}"></div>`;
+    }
+    return `
+      <div class="overview-rua">
+        <div class="rotulo">${r.rua}</div>
+        <div class="overview-faixa" onclick="selecionarRua('${r.rua}')">${celulas}</div>
+      </div>`;
+  }).join('');
+}
+
+async function selecionarRua(rua) {
+  ruaSelecionada = rua;
+  document.querySelectorAll('.pill-rua').forEach(el => el.classList.remove('selecionada'));
+  carregarResumo(); // reaplica destaque nos pills
+
+  document.getElementById('titulo-detalhe').textContent = `Rua ${rua} · posições detalhadas`;
+  document.getElementById('detalhe').innerHTML = '<div id="detalhe-vazio">Carregando...</div>';
+
+  const dados = await api(`/api/dashboard/rua/${rua}/detalhe`);
+
+  if (rua === 'BLC') {
+    const html = `<div class="grid-lado" style="grid-template-columns: repeat(15, 1fr);">` +
+      dados.posicoes.map(p => celulaHtml(p, false)).join('') + `</div>`;
+    document.getElementById('detalhe').innerHTML = html;
+    ativarTooltips();
+    return;
+  }
+
+  const lados = [...new Set(dados.posicoes.map(p => p.lado))].sort();
+  const html = lados.map((lado, idx) => {
+    const posicoesLado = dados.posicoes
+      .filter(p => p.lado === lado)
+      .sort((a, b) => a.coluna - b.coluna || b.nivel - a.nivel);
+    return `
+      <div class="lado-bloco">
+        <div class="lado-titulo">Lado ${lado}</div>
+        <div class="grid-lado">
+          ${posicoesLado.map(p => celulaHtml(p, idx % 2 === 1)).join('')}
+        </div>
+      </div>`;
+  }).join('');
+
+  document.getElementById('detalhe').innerHTML = html;
+  ativarTooltips();
+}
+
+function celulaHtml(p, par) {
+  const classe = p.ocupado ? `celula-posicao celula-ocupada ${par ? 'par' : ''}` : 'celula-posicao celula-livre';
+  return `<div class="${classe}" data-codigo="${p.codigo}" data-desc="${p.ocupado ? (p.descricao || p.sku) + ' · ' + p.quantidade : 'Livre'}"></div>`;
+}
+
+function ativarTooltips() {
+  const tooltip = document.getElementById('tooltip');
+  document.querySelectorAll('.celula-posicao').forEach(el => {
+    el.addEventListener('mousemove', e => {
+      tooltip.style.display = 'block';
+      tooltip.style.left = (e.clientX + 14) + 'px';
+      tooltip.style.top = (e.clientY + 14) + 'px';
+      tooltip.innerHTML = `<div class="tt-codigo">${el.dataset.codigo}</div><div class="tt-desc">${el.dataset.desc}</div>`;
+    });
+    el.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+  });
+}
+
+carregarResumo();
+setInterval(() => {
+  carregarResumo();
+  if (ruaSelecionada) selecionarRua(ruaSelecionada);
+}, 30000);
+</script>
+</body>
+</html>
