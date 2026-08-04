@@ -40,8 +40,8 @@ limiter = Limiter(get_remote_address, app=app, default_limits=["300 per minute"]
 
 @app.after_request
 def cabecalhos_seguranca(resp):
-    resp.headers["X-Content-Type-Options"] = "nosniff"     # impede o navegador de "adivinhar" tipo de arquivo
-    resp.headers["X-Frame-Options"] = "DENY"               # impede embutir o sistema em iframe (clickjacking)
+    resp.headers["X-Content-Type-Options"] = "nosniff"      # impede o navegador de "adivinhar" tipo de arquivo
+    resp.headers["X-Frame-Options"] = "DENY"                # impede embutir o sistema em iframe (clickjacking)
     resp.headers["Referrer-Policy"] = "same-origin"
     return resp
 
@@ -1152,6 +1152,7 @@ def pagina_dashboard():
 # --------------------------------------------------------------------------
 # SERVE O COLETOR (arquivo estático)
 # --------------------------------------------------------------------------
+@app.route("/")
 @app.route("/coletor")
 def pagina_coletor():
     return send_from_directory(".", "coletor.html")
