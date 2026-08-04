@@ -1139,23 +1139,23 @@ def dashboard_rua_detalhe(rua):
 def pagina_estoque_visual():
     if not current_user.is_authenticated:
         return redirect("/coletor")
-    return send_from_directory(".", "estoque_visual.html")
+    return render_template("estoque_visual.html")
 
 
 @app.route("/dashboard")
 def pagina_dashboard():
     if not current_user.is_authenticated:
         return redirect("/coletor")
-    return send_from_directory(".", "dashboard.html")
+    return render_template("dashboard.html")
 
 
 # --------------------------------------------------------------------------
-# SERVE O COLETOR (arquivo estático)
+# SERVE O COLETOR (agora usando render_template para a pasta templates)
 # --------------------------------------------------------------------------
 @app.route("/")
 @app.route("/coletor")
 def pagina_coletor():
-    return send_from_directory(".", "coletor.html")
+    return render_template("coletor.html")
 
 
 if __name__ == "__main__":
