@@ -9,9 +9,9 @@ Sistema de movimentação de estoque - backend em tempo real
   isso cobre retry de rede do navegador.
 """
 
-import pyodbc
-from datetime import datetime, timedelta
-from flask import Flask, request, jsonify, session, render_template, send_from_directory, redirect
+import pymssql
+from datetime import datetime
+from flask import Flask, request, jsonify, session, render_template, send_from_directory
 from flask_login import (
     LoginManager, UserMixin, login_user, logout_user,
     login_required, current_user
@@ -25,29 +25,20 @@ import config
 app = Flask(__name__)
 app.config["SECRET_KEY"] = config.SECRET_KEY
 
-# ---- Hardening de sessão/cookie ----
-app.config["SESSION_COOKIE_HTTPONLY"] = True    # JS não consegue ler o cookie (mitiga XSS roubando sessão)
-app.config["SESSION_COOKIE_SAMESITE"] = "Lax"   # mitiga CSRF vindo de outros sites
-app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=12)  # sessão expira (turno + margem)
-# Quando houver HTTPS (proxy/nginx), habilitar também:
-# app.config["SESSION_COOKIE_SECURE"] = True
-
 login_manager = LoginManager(app)
 login_manager.login_view = None  # API pura, sem redirect de página
 
-limiter = Limiter(get_remote_address, app=app, default_limits=["300 per minute"])
-
-
-@app.after_request
-def cabecalhos_seguranca(resp):
-    resp.headers["X-Content-Type-Options"] = "nosniff"      # impede o navegador de "adivinhar" tipo de arquivo
-    resp.headers["X-Frame-Options"] = "DENY"                # impede embutir o sistema em iframe (clickjacking)
-    resp.headers["Referrer-Policy"] = "same-origin"
-    return resp
+limiter = Limiter(get_remote_address, app=app, default_limits=[])
 
 
 def get_conn():
-    return pyodbc.connect(config.CONNECTION_STRING)
+    return pymssql.connect(
+        server=config.SQL_SERVER,
+        user=config.SQL_USER,
+        password=config.SQL_PASSWORD,
+        database=config.SQL_DATABASE,
+        as_dict=False,
+    )
 
 
 # --------------------------------------------------------------------------
@@ -66,7 +57,7 @@ def carregar_operador(user_id):
     conn = get_conn()
     cur = conn.cursor()
     cur.execute(
-        "SELECT id, nome_completo, login, perfil FROM tb_operadores WHERE id = ? AND ativo = 1",
+        "SELECT id, nome_completo, login, perfil FROM tb_operadores WHERE id = %s AND ativo = 1",
         (user_id,),
     )
     row = cur.fetchone()
@@ -87,7 +78,7 @@ def api_login():
     cur = conn.cursor()
     cur.execute(
         "SELECT id, nome_completo, login, senha_hash, perfil FROM tb_operadores "
-        "WHERE login = ? AND ativo = 1",
+        "WHERE login = %s AND ativo = 1",
         (login,),
     )
     row = cur.fetchone()
@@ -123,7 +114,7 @@ def api_quem_sou_eu():
 def buscar_produto(sku):
     conn = get_conn()
     cur = conn.cursor()
-    cur.execute("SELECT sku, descricao FROM tb_produtos WHERE sku = ?", (sku,))
+    cur.execute("SELECT sku, descricao FROM tb_produtos WHERE sku = %s", (sku,))
     row = cur.fetchone()
     conn.close()
     if row:
@@ -144,11 +135,11 @@ def cadastrar_produto():
     cur = conn.cursor()
     try:
         cur.execute(
-            "INSERT INTO tb_produtos (sku, descricao, pendente_validacao) VALUES (?, ?, 1)",
+            "INSERT INTO tb_produtos (sku, descricao, pendente_validacao) VALUES (%s, %s, 1)",
             (sku, descricao),
         )
         conn.commit()
-    except pyodbc.IntegrityError:
+    except pymssql.IntegrityError:
         # já existe (corrida entre dois coletores bipando o mesmo SKU novo ao mesmo tempo)
         conn.rollback()
     conn.close()
@@ -163,14 +154,14 @@ def aplicar_saldo(cur, sku, posicao, delta, lote=""):
     concorrência entre dois movimentos batendo no mesmo saldo ao mesmo tempo."""
     cur.execute(
         "UPDATE tb_saldo_posicao WITH (UPDLOCK, HOLDLOCK) "
-        "SET quantidade = quantidade + ?, atualizado_em = SYSDATETIME() "
-        "WHERE sku = ? AND posicao = ? AND lote = ?",
+        "SET quantidade = quantidade + %s, atualizado_em = SYSDATETIME() "
+        "WHERE sku = %s AND posicao = %s AND lote = %s",
         (delta, sku, posicao, lote),
     )
     if cur.rowcount == 0:
         cur.execute(
             "INSERT INTO tb_saldo_posicao (sku, posicao, lote, quantidade, atualizado_em) "
-            "VALUES (?, ?, ?, ?, SYSDATETIME())",
+            "VALUES (%s, %s, %s, %s, SYSDATETIME())",
             (sku, posicao, lote, delta),
         )
 
@@ -191,11 +182,11 @@ def garantir_posicao_cadastrada(cur, codigo):
     não está pronto."""
     if not codigo:
         return
-    cur.execute("SELECT 1 FROM tb_posicoes WHERE codigo = ?", (codigo,))
+    cur.execute("SELECT 1 FROM tb_posicoes WHERE codigo = %s", (codigo,))
     if not cur.fetchone():
         try:
-            cur.execute("INSERT INTO tb_posicoes (codigo) VALUES (?)", (codigo,))
-        except pyodbc.IntegrityError:
+            cur.execute("INSERT INTO tb_posicoes (codigo) VALUES (%s)", (codigo,))
+        except pymssql.IntegrityError:
             pass  # corrida entre dois coletores bipando a mesma posição nova
 
 
@@ -223,7 +214,7 @@ def registrar_movimento():
     try:
         # ---- idempotência: já processamos esse id_movimento antes? ----
         cur.execute(
-            "SELECT 1 FROM tb_log_auditoria WHERE id_movimento = ?",
+            "SELECT 1 FROM tb_log_auditoria WHERE id_movimento = %s",
             (dados["id_movimento"],),
         )
         if cur.fetchone():
@@ -238,7 +229,7 @@ def registrar_movimento():
             "INSERT INTO tb_log_auditoria "
             "(id_movimento, data_hora_brasilia, tipo_operacao, operador_id, chave_nfe, numero_nf, "
             " sku, descricao_produto, quantidade, posicao_origem, posicao_destino) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 dados["id_movimento"],
                 dados.get("data_hora_brasilia") or datetime.utcnow().isoformat(),
@@ -270,7 +261,7 @@ def registrar_movimento():
     except Exception as e:
         conn.rollback()
         app.logger.exception("Erro ao registrar movimento")
-        return jsonify({"erro": "falha ao gravar movimento"}), 500
+        return jsonify({"erro": "falha ao gravar movimento", "detalhe": str(e)}), 500
     finally:
         conn.close()
 
@@ -349,7 +340,7 @@ def dashboard_movimentos_por_rua():
     cur = conn.cursor()
     cur.execute(f"""
         SELECT
-            CASE WHEN posicao LIKE 'JMK1-BLC-%' THEN 'BLC'
+            CASE WHEN posicao LIKE 'JMK1-BLC-%%' THEN 'BLC'
                  ELSE LEFT(PARSENAME({parseia_codigo_sql()}, 3), 1) END AS rua,
             COUNT(*) AS total
         FROM (
@@ -361,7 +352,7 @@ def dashboard_movimentos_por_rua():
             WHERE posicao_destino IS NOT NULL
               AND CAST(data_hora_brasilia AS DATE) = CAST(SYSDATETIME() AS DATE)
         ) t
-        GROUP BY CASE WHEN posicao LIKE 'JMK1-BLC-%' THEN 'BLC'
+        GROUP BY CASE WHEN posicao LIKE 'JMK1-BLC-%%' THEN 'BLC'
                       ELSE LEFT(PARSENAME({parseia_codigo_sql()}, 3), 1) END
         ORDER BY rua
     """)
@@ -397,12 +388,12 @@ def dashboard_ocupacao():
     cur.execute(f"""
         SELECT
             PARSENAME({parseia_codigo_sql().replace('codigo', 'p.codigo')}, 3) AS lado,
-            TRY_CAST(PARSENAME({parseia_codigo_sql().replace('codigo', 'p.codigo')}, 2) AS INT) AS coluna,
+            CAST(PARSENAME({parseia_codigo_sql().replace('codigo', 'p.codigo')}, 2) AS INT) AS coluna,
             COUNT(DISTINCT CASE WHEN s.quantidade > 0 THEN p.codigo END) AS niveis_ocupados,
             COUNT(DISTINCT p.codigo) AS niveis_totais
         FROM tb_posicoes p
         LEFT JOIN tb_saldo_posicao s ON s.posicao = p.codigo
-        WHERE p.codigo LIKE 'JMK1-%-%-%' AND p.codigo NOT LIKE 'JMK1-%-%-%-%' AND p.codigo NOT LIKE 'JMK1-BLC-%'
+        WHERE p.codigo NOT LIKE 'JMK1-BLC-%%'
         GROUP BY PARSENAME({parseia_codigo_sql().replace('codigo', 'p.codigo')}, 3),
                  PARSENAME({parseia_codigo_sql().replace('codigo', 'p.codigo')}, 2)
     """)
@@ -426,12 +417,12 @@ def dashboard_sugestao_armazenagem():
     conn = get_conn()
     cur = conn.cursor()
     cur.execute(f"""
-        SELECT TOP (?) p.codigo
+        SELECT TOP (%s) p.codigo
         FROM tb_posicoes p
         LEFT JOIN tb_saldo_posicao s
             ON s.posicao = p.codigo AND s.quantidade > 0
-        WHERE s.id IS NULL AND p.codigo LIKE 'JMK1-%-%-%' AND p.codigo NOT LIKE 'JMK1-%-%-%-%' AND p.codigo NOT LIKE 'JMK1-BLC-%'
-        ORDER BY TRY_CAST(PARSENAME({parseia_codigo_sql().replace('codigo', 'p.codigo')}, 1) AS INT) ASC,
+        WHERE s.id IS NULL AND p.codigo NOT LIKE 'JMK1-BLC-%%'
+        ORDER BY CAST(PARSENAME({parseia_codigo_sql().replace('codigo', 'p.codigo')}, 1) AS INT) ASC,
                  NEWID()
     """, (limite,))
     sugestoes = [row[0] for row in cur.fetchall()]
@@ -446,7 +437,7 @@ def dashboard_movimentos_recentes():
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("""
-        SELECT TOP (?) l.data_hora_brasilia, l.tipo_operacao, l.sku, l.descricao_produto,
+        SELECT TOP (%s) l.data_hora_brasilia, l.tipo_operacao, l.sku, l.descricao_produto,
                l.quantidade, l.posicao_origem, l.posicao_destino, l.numero_nf, o.nome_completo
         FROM tb_log_auditoria l
         JOIN tb_operadores o ON o.id = l.operador_id
@@ -520,7 +511,7 @@ def dashboard_avisos():
                    SUM(CASE WHEN s.quantidade > 0 THEN 1 ELSE 0 END) AS ocupados
             FROM tb_posicoes p
             LEFT JOIN tb_saldo_posicao s ON s.posicao = p.codigo
-            WHERE p.codigo LIKE 'JMK1-%-%-%' AND p.codigo NOT LIKE 'JMK1-%-%-%-%' AND p.codigo NOT LIKE 'JMK1-BLC-%'
+            WHERE p.codigo NOT LIKE 'JMK1-BLC-%%'
             GROUP BY PARSENAME({parseia_codigo_sql().replace('codigo', 'p.codigo')}, 3),
                      PARSENAME({parseia_codigo_sql().replace('codigo', 'p.codigo')}, 2)
             HAVING COUNT(*) = SUM(CASE WHEN s.quantidade > 0 THEN 1 ELSE 0 END)
@@ -581,7 +572,7 @@ def dashboard_funil():
                    SUM(CASE WHEN s.quantidade > 0 THEN 1 ELSE 0 END) AS ocupados
             FROM tb_posicoes p
             LEFT JOIN tb_saldo_posicao s ON s.posicao = p.codigo
-            WHERE p.codigo LIKE 'JMK1-%-%-%' AND p.codigo NOT LIKE 'JMK1-%-%-%-%' AND p.codigo NOT LIKE 'JMK1-BLC-%'
+            WHERE p.codigo NOT LIKE 'JMK1-BLC-%%'
             GROUP BY PARSENAME({parseia_codigo_sql().replace('codigo', 'p.codigo')}, 3),
                      PARSENAME({parseia_codigo_sql().replace('codigo', 'p.codigo')}, 2)
         ) t
@@ -606,7 +597,7 @@ def simulador_alocacao():
 
     conn = get_conn()
     cur = conn.cursor()
-    cur.execute("SELECT descricao FROM tb_produtos WHERE sku = ?", (sku,))
+    cur.execute("SELECT descricao FROM tb_produtos WHERE sku = %s", (sku,))
     row = cur.fetchone()
     if not row:
         conn.close()
@@ -615,7 +606,7 @@ def simulador_alocacao():
 
     cur.execute(
         "SELECT posicao, quantidade FROM tb_saldo_posicao "
-        "WHERE sku = ? AND quantidade > 0 ORDER BY quantidade ASC",
+        "WHERE sku = %s AND quantidade > 0 ORDER BY quantidade ASC",
         (sku,),
     )
     consolidar = [{"codigo": r[0], "quantidade_atual": float(r[1])} for r in cur.fetchall()]
@@ -624,8 +615,8 @@ def simulador_alocacao():
         SELECT TOP 5 p.codigo
         FROM tb_posicoes p
         LEFT JOIN tb_saldo_posicao s ON s.posicao = p.codigo AND s.quantidade > 0
-        WHERE s.id IS NULL AND p.codigo LIKE 'JMK1-%-%-%' AND p.codigo NOT LIKE 'JMK1-%-%-%-%' AND p.codigo NOT LIKE 'JMK1-BLC-%'
-        ORDER BY TRY_CAST(PARSENAME({parseia_codigo_sql().replace('codigo', 'p.codigo')}, 1) AS INT) ASC,
+        WHERE s.id IS NULL AND p.codigo NOT LIKE 'JMK1-BLC-%%'
+        ORDER BY CAST(PARSENAME({parseia_codigo_sql().replace('codigo', 'p.codigo')}, 1) AS INT) ASC,
                  NEWID()
     """)
     livres = [r[0] for r in cur.fetchall()]
@@ -649,21 +640,21 @@ def dashboard_movimentos_filtro():
     condicoes = []
     params = []
     if numero_nf:
-        condicoes.append("l.numero_nf LIKE ?")
+        condicoes.append("l.numero_nf LIKE %s")
         params.append(f"%{numero_nf}%")
     if sku:
-        condicoes.append("(l.sku LIKE ? OR l.descricao_produto LIKE ?)")
+        condicoes.append("(l.sku LIKE %s OR l.descricao_produto LIKE %s)")
         params += [f"%{sku}%", f"%{sku}%"]
     if rua:
         condicoes.append(
-            "LEFT(PARSENAME(REPLACE(ISNULL(l.posicao_destino, l.posicao_origem), '-', '.'), 3), 1) = ?"
+            "LEFT(PARSENAME(REPLACE(ISNULL(l.posicao_destino, l.posicao_origem), '-', '.'), 3), 1) = %s"
         )
         params.append(rua)
     if posicao:
-        condicoes.append("(l.posicao_origem LIKE ? OR l.posicao_destino LIKE ?)")
+        condicoes.append("(l.posicao_origem LIKE %s OR l.posicao_destino LIKE %s)")
         params += [f"%{posicao}%", f"%{posicao}%"]
     if tipo:
-        condicoes.append("l.tipo_operacao = ?")
+        condicoes.append("l.tipo_operacao = %s")
         params.append(tipo)
 
     where = ("WHERE " + " AND ".join(condicoes)) if condicoes else ""
@@ -698,15 +689,13 @@ def dashboard_ruas_resumo():
     cur = conn.cursor()
     cur.execute(f"""
         SELECT
-            CASE WHEN p.codigo LIKE 'JMK1-BLC-%' THEN 'BLC'
+            CASE WHEN p.codigo LIKE 'JMK1-BLC-%%' THEN 'BLC'
                  ELSE LEFT(PARSENAME({parseia_codigo_sql().replace('codigo', 'p.codigo')}, 3), 1) END AS rua,
             COUNT(DISTINCT p.codigo) AS total,
             COUNT(DISTINCT CASE WHEN s.quantidade > 0 THEN p.codigo END) AS ocupadas
         FROM tb_posicoes p
         LEFT JOIN tb_saldo_posicao s ON s.posicao = p.codigo
-        WHERE p.codigo LIKE 'JMK1-BLC-%'
-           OR (p.codigo LIKE 'JMK1-%-%-%' AND p.codigo NOT LIKE 'JMK1-%-%-%-%')
-        GROUP BY CASE WHEN p.codigo LIKE 'JMK1-BLC-%' THEN 'BLC'
+        GROUP BY CASE WHEN p.codigo LIKE 'JMK1-BLC-%%' THEN 'BLC'
                       ELSE LEFT(PARSENAME({parseia_codigo_sql().replace('codigo', 'p.codigo')}, 3), 1) END
         ORDER BY rua
     """)
@@ -737,7 +726,7 @@ def inventario_contagem():
     conn = get_conn()
     cur = conn.cursor()
     try:
-        cur.execute("SELECT 1 FROM tb_inventario WHERE id_contagem = ?", (dados["id_contagem"],))
+        cur.execute("SELECT 1 FROM tb_inventario WHERE id_contagem = %s", (dados["id_contagem"],))
         if cur.fetchone():
             conn.close()
             return jsonify({"ok": True, "duplicado": True})
@@ -745,7 +734,7 @@ def inventario_contagem():
         garantir_posicao_cadastrada(cur, dados["posicao"])
 
         cur.execute(
-            "SELECT ISNULL(SUM(quantidade), 0) FROM tb_saldo_posicao WHERE posicao = ? AND sku = ?",
+            "SELECT ISNULL(SUM(quantidade), 0) FROM tb_saldo_posicao WHERE posicao = %s AND sku = %s",
             (dados["posicao"], dados["sku"]),
         )
         qtd_sistema = float(cur.fetchone()[0])
@@ -755,7 +744,7 @@ def inventario_contagem():
 
         cur.execute(
             "INSERT INTO tb_inventario (id_contagem, data_hora, posicao, sku, qtd_contada, "
-            "qtd_sistema, divergencia, operador_id, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "qtd_sistema, divergencia, operador_id, status) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 dados["id_contagem"],
                 dados.get("data_hora") or datetime.utcnow().isoformat(),
@@ -772,7 +761,7 @@ def inventario_contagem():
     except Exception as e:
         conn.rollback()
         app.logger.exception("Erro ao registrar contagem")
-        return jsonify({"erro": "falha ao registrar contagem"}), 500
+        return jsonify({"erro": "falha ao registrar contagem", "detalhe": str(e)}), 500
     finally:
         conn.close()
 
@@ -789,7 +778,7 @@ def inventario_divergencias():
         FROM tb_inventario i
         JOIN tb_operadores o ON o.id = i.operador_id
         LEFT JOIN tb_produtos p ON p.sku = i.sku
-        WHERE i.status = ?
+        WHERE i.status = %s
         ORDER BY i.id DESC
     """, (status,))
     dados = [
@@ -820,7 +809,7 @@ def inventario_decidir(inv_id):
     cur = conn.cursor()
     try:
         cur.execute(
-            "SELECT posicao, sku, divergencia, status FROM tb_inventario WHERE id = ?",
+            "SELECT posicao, sku, divergencia, status FROM tb_inventario WHERE id = %s",
             (inv_id,),
         )
         row = cur.fetchone()
@@ -837,7 +826,7 @@ def inventario_decidir(inv_id):
             cur.execute(
                 "INSERT INTO tb_log_auditoria (id_movimento, data_hora_brasilia, tipo_operacao, "
                 "operador_id, chave_nfe, numero_nf, sku, quantidade, posicao_origem, posicao_destino) "
-                "VALUES (?, SYSDATETIME(), 'AJUSTE_INVENTARIO', ?, '', NULL, ?, ?, ?, ?)",
+                "VALUES (%s, SYSDATETIME(), 'AJUSTE_INVENTARIO', %s, '', NULL, %s, %s, %s, %s)",
                 (
                     str(uuid.uuid4()), current_user.id, sku, abs(divergencia),
                     posicao if divergencia < 0 else None,
@@ -850,7 +839,7 @@ def inventario_decidir(inv_id):
             novo_status = "REJEITADO"
 
         cur.execute(
-            "UPDATE tb_inventario SET status = ?, aprovado_por = ?, aprovado_em = SYSDATETIME() WHERE id = ?",
+            "UPDATE tb_inventario SET status = %s, aprovado_por = %s, aprovado_em = SYSDATETIME() WHERE id = %s",
             (novo_status, current_user.id, inv_id),
         )
         conn.commit()
@@ -858,7 +847,7 @@ def inventario_decidir(inv_id):
     except Exception as e:
         conn.rollback()
         app.logger.exception("Erro ao decidir contagem")
-        return jsonify({"erro": "falha ao processar decisão"}), 500
+        return jsonify({"erro": "falha ao processar decisão", "detalhe": str(e)}), 500
     finally:
         conn.close()
 
@@ -938,118 +927,6 @@ def relatorio_inventario():
     )
 
 
-# --------------------------------------------------------------------------
-# RELATÓRIOS EM EXCEL (.xlsx de verdade, com formatação)
-# --------------------------------------------------------------------------
-def gerar_xlsx(titulo, colunas, linhas, nome_arquivo):
-    from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment
-    from openpyxl.utils import get_column_letter
-
-    wb = Workbook()
-    ws = wb.active
-    ws.title = titulo[:31]
-
-    fonte_cab = Font(bold=True, color="FFFFFF", size=11)
-    fundo_cab = PatternFill(start_color="0B4F9E", end_color="0B4F9E", fill_type="solid")
-
-    for col_idx, nome in enumerate(colunas, start=1):
-        cel = ws.cell(row=1, column=col_idx, value=nome)
-        cel.font = fonte_cab
-        cel.fill = fundo_cab
-        cel.alignment = Alignment(horizontal="center")
-
-    for row_idx, linha in enumerate(linhas, start=2):
-        for col_idx, valor in enumerate(linha, start=1):
-            ws.cell(row=row_idx, column=col_idx, value=valor)
-
-    for col_idx in range(1, len(colunas) + 1):
-        maior = max(
-            [len(str(colunas[col_idx - 1]))] +
-            [len(str(l[col_idx - 1])) for l in linhas[:200] if l[col_idx - 1] is not None]
-        ) if linhas else len(str(colunas[col_idx - 1]))
-        ws.column_dimensions[get_column_letter(col_idx)].width = min(maior + 3, 50)
-
-    ws.freeze_panes = "A2"
-    ws.auto_filter.ref = ws.dimensions
-
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-    return Response(
-        buf.read(),
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename={nome_arquivo}"},
-    )
-
-
-@app.route("/api/relatorio/inventario.xlsx")
-@login_required
-def relatorio_inventario_xlsx():
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT i.data_hora, i.posicao, i.sku, p.descricao, i.qtd_contada,
-               i.qtd_sistema, i.divergencia, i.status, o.nome_completo
-        FROM tb_inventario i
-        JOIN tb_operadores o ON o.id = i.operador_id
-        LEFT JOIN tb_produtos p ON p.sku = i.sku
-        ORDER BY i.id DESC
-    """)
-    linhas = [
-        [str(r[0]), r[1], r[2], r[3] or "", float(r[4]), float(r[5]), float(r[6]), r[7], r[8]]
-        for r in cur.fetchall()
-    ]
-    conn.close()
-    return gerar_xlsx(
-        "Inventário",
-        ["Data/Hora", "Posição", "SKU", "Produto", "Contado", "Sistema", "Divergência", "Status", "Operador"],
-        linhas, "inventario.xlsx",
-    )
-
-
-@app.route("/api/relatorio/movimentos.xlsx")
-@login_required
-def relatorio_movimentos_xlsx():
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT l.data_hora_brasilia, l.tipo_operacao, l.sku, l.descricao_produto,
-               l.quantidade, l.posicao_origem, l.posicao_destino, l.numero_nf, o.nome_completo
-        FROM tb_log_auditoria l JOIN tb_operadores o ON o.id = l.operador_id
-        ORDER BY l.id DESC
-    """)
-    linhas = [
-        [str(r[0]), r[1], r[2], r[3] or "", float(r[4]), r[5] or "", r[6] or "", r[7] or "", r[8]]
-        for r in cur.fetchall()
-    ]
-    conn.close()
-    return gerar_xlsx(
-        "Movimentos",
-        ["Data/Hora", "Tipo", "SKU", "Produto", "Qtd", "Origem", "Destino", "NF", "Operador"],
-        linhas, "movimentos.xlsx",
-    )
-
-
-@app.route("/api/relatorio/saldo.xlsx")
-@login_required
-def relatorio_saldo_xlsx():
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT s.posicao, s.sku, p.descricao, s.quantidade, s.atualizado_em
-        FROM tb_saldo_posicao s LEFT JOIN tb_produtos p ON p.sku = s.sku
-        WHERE s.quantidade > 0 ORDER BY s.posicao
-    """)
-    linhas = [[r[0], r[1], r[2] or "", float(r[3]), str(r[4])] for r in cur.fetchall()]
-    conn.close()
-    return gerar_xlsx(
-        "Saldo por posição",
-        ["Posição", "SKU", "Produto", "Qtd", "Atualizado em"],
-        linhas, "saldo_por_posicao.xlsx",
-    )
-
-
 @app.route("/api/dashboard/ranking-ruas", methods=["GET"])
 @login_required
 def dashboard_ranking_ruas():
@@ -1058,7 +935,7 @@ def dashboard_ranking_ruas():
     cur = conn.cursor()
     cur.execute("""
         SELECT
-            CASE WHEN posicao LIKE 'JMK1-BLC-%' THEN 'BLC'
+            CASE WHEN posicao LIKE 'JMK1-BLC-%%' THEN 'BLC'
                  ELSE LEFT(PARSENAME(REPLACE(posicao, '-', '.'), 3), 1) END AS rua,
             COUNT(*) AS total
         FROM (
@@ -1066,8 +943,8 @@ def dashboard_ranking_ruas():
             UNION ALL
             SELECT posicao_destino, data_hora_brasilia FROM tb_log_auditoria WHERE posicao_destino IS NOT NULL
         ) t
-        WHERE data_hora_brasilia >= DATEADD(day, -?, SYSDATETIME())
-        GROUP BY CASE WHEN posicao LIKE 'JMK1-BLC-%' THEN 'BLC'
+        WHERE data_hora_brasilia >= DATEADD(day, -%s, SYSDATETIME())
+        GROUP BY CASE WHEN posicao LIKE 'JMK1-BLC-%%' THEN 'BLC'
                       ELSE LEFT(PARSENAME(REPLACE(posicao, '-', '.'), 3), 1) END
         ORDER BY total DESC
     """, (dias,))
@@ -1090,7 +967,7 @@ def dashboard_rua_detalhe(rua):
             FROM tb_posicoes p
             LEFT JOIN tb_saldo_posicao s ON s.posicao = p.codigo AND s.quantidade > 0
             LEFT JOIN tb_produtos pr ON pr.sku = s.sku
-            WHERE p.codigo LIKE 'JMK1-BLC-%'
+            WHERE p.codigo LIKE 'JMK1-BLC-%%'
             ORDER BY p.codigo
         """)
         posicoes = [
@@ -1112,13 +989,13 @@ def dashboard_rua_detalhe(rua):
     cur.execute(f"""
         SELECT p.codigo,
                PARSENAME({parseia_codigo_sql().replace('codigo', 'p.codigo')}, 3) AS lado,
-               TRY_CAST(PARSENAME({parseia_codigo_sql().replace('codigo', 'p.codigo')}, 2) AS INT) AS coluna,
-               TRY_CAST(PARSENAME({parseia_codigo_sql().replace('codigo', 'p.codigo')}, 1) AS INT) AS nivel,
+               CAST(PARSENAME({parseia_codigo_sql().replace('codigo', 'p.codigo')}, 2) AS INT) AS coluna,
+               CAST(PARSENAME({parseia_codigo_sql().replace('codigo', 'p.codigo')}, 1) AS INT) AS nivel,
                s.quantidade, s.sku, pr.descricao
         FROM tb_posicoes p
         LEFT JOIN tb_saldo_posicao s ON s.posicao = p.codigo AND s.quantidade > 0
         LEFT JOIN tb_produtos pr ON pr.sku = s.sku
-        WHERE p.codigo LIKE ? AND p.codigo LIKE 'JMK1-%-%-%' AND p.codigo NOT LIKE 'JMK1-%-%-%-%' AND p.codigo NOT LIKE 'JMK1-BLC-%'
+        WHERE p.codigo LIKE %s AND p.codigo NOT LIKE 'JMK1-BLC-%%'
         ORDER BY lado, coluna, nivel
     """, (f"JMK1-{rua.upper()}%",))
 
@@ -1137,25 +1014,20 @@ def dashboard_rua_detalhe(rua):
 
 @app.route("/estoque-visual")
 def pagina_estoque_visual():
-    if not current_user.is_authenticated:
-        return redirect("/coletor")
-    return render_template("estoque_visual.html")
+    return send_from_directory(".", "estoque_visual.html")
 
 
 @app.route("/dashboard")
 def pagina_dashboard():
-    if not current_user.is_authenticated:
-        return redirect("/coletor")
-    return render_template("dashboard.html")
+    return send_from_directory(".", "dashboard.html")
 
 
 # --------------------------------------------------------------------------
-# SERVE O COLETOR (agora usando render_template para a pasta templates)
+# SERVE O COLETOR (arquivo estático)
 # --------------------------------------------------------------------------
-@app.route("/")
 @app.route("/coletor")
 def pagina_coletor():
-    return render_template("coletor.html")
+    return send_from_directory(".", "coletor.html")
 
 
 if __name__ == "__main__":
