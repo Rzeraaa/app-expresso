@@ -34,6 +34,7 @@ limiter = Limiter(get_remote_address, app=app, default_limits=[])
 def get_conn():
     return pymssql.connect(
         server=config.SQL_SERVER,
+        port=str(config.SQL_PORT),
         user=config.SQL_USER,
         password=config.SQL_PASSWORD,
         database=config.SQL_DATABASE,
