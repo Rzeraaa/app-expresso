@@ -34,7 +34,6 @@ limiter = Limiter(get_remote_address, app=app, default_limits=[])
 def get_conn():
     return pymssql.connect(
         server=config.SQL_SERVER,
-        port=str(config.SQL_PORT),
         user=config.SQL_USER,
         password=config.SQL_PASSWORD,
         database=config.SQL_DATABASE,
@@ -1015,12 +1014,30 @@ def dashboard_rua_detalhe(rua):
 
 @app.route("/estoque-visual")
 def pagina_estoque_visual():
-    return send_from_directory(".", "estoque_visual.html")
+    return send_from_directory("templates", "estoque_visual.html")
 
 
 @app.route("/dashboard")
 def pagina_dashboard():
-    return send_from_directory(".", "dashboard.html")
+    return send_from_directory("templates", "dashboard.html")
+
+
+# --------------------------------------------------------------------------
+# ROTA TEMPORÁRIA DE DIAGNÓSTICO - remover depois de resolver o 404
+# --------------------------------------------------------------------------
+@app.route("/debug-arquivos")
+def debug_arquivos():
+    import os
+    raiz = os.listdir(".")
+    try:
+        pasta_templates = os.listdir("templates")
+    except Exception as e:
+        pasta_templates = f"ERRO: {e}"
+    return jsonify({
+        "diretorio_atual": os.getcwd(),
+        "arquivos_raiz": raiz,
+        "arquivos_templates": pasta_templates,
+    })
 
 
 # --------------------------------------------------------------------------
@@ -1028,7 +1045,7 @@ def pagina_dashboard():
 # --------------------------------------------------------------------------
 @app.route("/coletor")
 def pagina_coletor():
-    return send_from_directory(".", "coletor.html")
+    return send_from_directory("templates", "coletor.html")
 
 
 if __name__ == "__main__":
