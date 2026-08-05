@@ -5,3 +5,4 @@ pymssql==2.2.11
 python-dotenv==1.0.1
 Werkzeug==3.0.3
 waitress==3.0.0
+gunicorn
