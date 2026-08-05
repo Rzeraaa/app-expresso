@@ -1023,24 +1023,6 @@ def pagina_dashboard():
 
 
 # --------------------------------------------------------------------------
-# ROTA TEMPORÁRIA DE DIAGNÓSTICO - remover depois de resolver o 404
-# --------------------------------------------------------------------------
-@app.route("/debug-arquivos")
-def debug_arquivos():
-    import os
-    raiz = os.listdir(".")
-    try:
-        pasta_templates = os.listdir("templates")
-    except Exception as e:
-        pasta_templates = f"ERRO: {e}"
-    return jsonify({
-        "diretorio_atual": os.getcwd(),
-        "arquivos_raiz": raiz,
-        "arquivos_templates": pasta_templates,
-    })
-
-
-# --------------------------------------------------------------------------
 # SERVE O COLETOR (arquivo estático)
 # --------------------------------------------------------------------------
 @app.route("/coletor")
