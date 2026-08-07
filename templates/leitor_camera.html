@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Leitor de câmera · JMK Estoque</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+<style>
+  :root {
+    --azul: #2f5fda;
+    --azul-escuro: #1e3f9c;
+    --verde: #1a9e6d;
+    --verde-bg: #e5f6ee;
+    --vermelho: #d84343;
+    --vermelho-bg: #fbeaea;
+    --amarelo: #b9840b;
+    --amarelo-bg: #fbf1de;
+    --cinza-texto: #5b5f6b;
+    --cinza-borda: #e3e5ea;
+    --fundo: #f5f6f8;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    background: var(--fundo);
+    color: #1c1e26;
+  }
+  .topo {
+    background: #fff;
+    border-bottom: 1px solid var(--cinza-borda);
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .topo h1 {
+    font-size: 17px;
+    font-weight: 600;
+    margin: 0;
+  }
+  .topo a {
+    font-size: 13px;
+    color: var(--cinza-texto);
+    text-decoration: none;
+  }
+  .container {
+    max-width: 460px;
+    margin: 0 auto;
+    padding: 20px 16px 60px;
+  }
+  .passos {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+  .passo {
+    flex: 1;
+    text-align: center;
+    padding: 8px 4px;
+    border-radius: 10px;
+    background: #fff;
+    border: 1px solid var(--cinza-borda);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--cinza-texto);
+  }
+  .passo.ativo {
+    background: var(--azul);
+    border-color: var(--azul);
+    color: #fff;
+  }
+  .passo.concluido {
+    background: var(--verde-bg);
+    border-color: var(--verde);
+    color: var(--verde);
+  }
+  .cartao {
+    background: #fff;
+    border: 1px solid var(--cinza-borda);
+    border-radius: 14px;
+    padding: 18px;
+    margin-bottom: 16px;
+  }
+  .cartao h2 {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0 0 4px;
+  }
+  .cartao p.legenda {
+    font-size: 13px;
+    color: var(--cinza-texto);
+    margin: 0 0 14px;
+  }
+  #leitor-video {
+    width: 100%;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #000;
+    min-height: 240px;
+  }
+  .resultado {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    font-size: 14px;
+  }
+  .resultado.ok { background: var(--verde-bg); color: #0e6b48; }
+  .resultado b { display: block; font-size: 15px; margin-bottom: 2px; }
+  .campo { margin-bottom: 14px; }
+  .campo label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--cinza-texto);
+    margin-bottom: 6px;
+  }
+  .campo input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--cinza-borda);
+    border-radius: 8px;
+    font-size: 15px;
+  }
+  .botoes { display: flex; gap: 10px; }
+  button {
+    border: none;
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button.primario { background: var(--azul); color: #fff; flex: 1; }
+  button.primario:active { background: var(--azul-escuro); }
+  button.secundario { background: #fff; border: 1px solid var(--cinza-borda); color: var(--cinza-texto); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .aviso {
+    padding: 12px 14px;
+    border-radius: 10px;
+    font-size: 13px;
+    margin-bottom: 14px;
+  }
+  .aviso.pendente { background: var(--amarelo-bg); color: #6b4e08; }
+  .aviso.erro { background: var(--vermelho-bg); color: #8c2626; }
+  .historico {
+    margin-top: 24px;
+  }
+  .historico h3 {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--cinza-texto);
+    margin: 0 0 10px;
+  }
+  .item-historico {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #fff;
+    border: 1px solid var(--cinza-borda);
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    font-size: 13px;
+  }
+  .item-historico .sku { font-weight: 600; }
+  .item-historico .pos { color: var(--cinza-texto); }
+  .item-historico .qtd {
+    background: var(--verde-bg);
+    color: #0e6b48;
+    border-radius: 6px;
+    padding: 2px 8px;
+    font-weight: 600;
+    font-size: 12px;
+  }
+</style>
+</head>
+<body>
+
+<div class="topo">
+  <h1>Leitor de câmera</h1>
+  <a href="/dashboard">← Painel gerencial</a>
+</div>
+
+<div class="container">
+
+  <div class="passos">
+    <div class="passo" id="passo-1">1. Posição</div>
+    <div class="passo" id="passo-2">2. Produto</div>
+    <div class="passo" id="passo-3">3. Confirmar</div>
+  </div>
+
+  <div id="tela-erro-login" class="aviso erro" style="display:none;">
+    Sua sessão expirou. <a href="/">Fazer login novamente</a>.
+  </div>
+
+  <div class="cartao" id="cartao-scanner">
+    <h2 id="titulo-scanner">Escaneie a etiqueta da posição</h2>
+    <p class="legenda" id="legenda-scanner">Aponte a câmera para o QR Code do endereço no armazém.</p>
+    <div id="leitor-video"></div>
+  </div>
+
+  <div class="cartao" id="cartao-posicao-lida" style="display:none;">
+    <div class="resultado ok">
+      <div>
+        <b id="valor-posicao"></b>
+        Posição confirmada
+      </div>
+    </div>
+  </div>
+
+  <div class="cartao" id="cartao-confirmar" style="display:none;">
+    <h2>Confirmar entrada</h2>
+    <p class="legenda">Revise os dados antes de gravar no estoque.</p>
+
+    <div id="aviso-produto-novo" class="aviso pendente" style="display:none;">
+      Produto novo — cadastrado automaticamente com a descrição abaixo.
+    </div>
+
+    <div class="campo">
+      <label>Posição</label>
+      <input type="text" id="input-posicao" disabled>
+    </div>
+    <div class="campo">
+      <label>SKU do produto</label>
+      <input type="text" id="input-sku" disabled>
+    </div>
+    <div class="campo">
+      <label>Descrição</label>
+      <input type="text" id="input-descricao">
+    </div>
+    <div class="campo">
+      <label>Quantidade</label>
+      <input type="number" id="input-quantidade" value="1" min="0.01" step="1">
+    </div>
+
+    <div class="botoes">
+      <button class="secundario" onclick="cancelarLeitura()">Cancelar</button>
+      <button class="primario" id="btn-gravar" onclick="gravarEntrada()">Gravar entrada</button>
+    </div>
+  </div>
+
+  <div id="aviso-geral"></div>
+
+  <div class="historico">
+    <h3>Últimas leituras desta sessão</h3>
+    <div id="lista-historico"></div>
+  </div>
+
+</div>
+
+<script>
+let etapa = "posicao";
+let posicaoLida = "";
+let skuLido = "";
+let scanner = null;
+let processandoSku = false;
+
+const historico = [];
+
+function iniciarScanner() {
+  scanner = new Html5Qrcode("leitor-video");
+  scanner.start(
+    { facingMode: "environment" },
+    { fps: 10, qrbox: { width: 240, height: 240 } },
+    aoLerQrCode,
+    () => {}
+  ).catch(() => {
+    document.getElementById("leitor-video").innerHTML =
+      "<p style='color:#fff;padding:20px;font-size:13px;'>Não foi possível acessar a câmera. Verifique a permissão do navegador.</p>";
+  });
+}
+
+function pausarScanner() {
+  if (scanner) {
+    scanner.pause(true);
+  }
+}
+
+function retomarScanner() {
+  if (scanner) {
+    scanner.resume();
+  }
+}
+
+async function aoLerQrCode(texto) {
+  if (etapa === "posicao") {
+    posicaoLida = texto.trim();
+    pausarScanner();
+    document.getElementById("valor-posicao").textContent = posicaoLida;
+    document.getElementById("cartao-posicao-lida").style.display = "block";
+    document.getElementById("passo-1").classList.remove("ativo");
+    document.getElementById("passo-1").classList.add("concluido");
+    document.getElementById("passo-2").classList.add("ativo");
+    document.getElementById("titulo-scanner").textContent = "Escaneie a etiqueta do produto";
+    document.getElementById("legenda-scanner").textContent = "Aponte a câmera para o QR Code do SKU do produto.";
+    etapa = "produto";
+    retomarScanner();
+  } else if (etapa === "produto" && !processandoSku) {
+    processandoSku = true;
+    skuLido = texto.trim();
+    pausarScanner();
+    await buscarProdutoEAvancar();
+    processandoSku = false;
+  }
+}
+
+async function buscarProdutoEAvancar() {
+  document.getElementById("cartao-scanner").style.display = "none";
+  document.getElementById("passo-2").classList.remove("ativo");
+  document.getElementById("passo-2").classList.add("concluido");
+  document.getElementById("passo-3").classList.add("ativo");
+
+  document.getElementById("input-posicao").value = posicaoLida;
+  document.getElementById("input-sku").value = skuLido;
+
+  try {
+    const resp = await fetch(`/api/produtos/${encodeURIComponent(skuLido)}`);
+    if (resp.status === 401) {
+      mostrarErroLogin();
+      return;
+    }
+    if (resp.ok) {
+      const dados = await resp.json();
+      document.getElementById("input-descricao").value = dados.descricao;
+      document.getElementById("input-descricao").disabled = true;
+      document.getElementById("aviso-produto-novo").style.display = "none";
+    } else {
+      document.getElementById("input-descricao").value = "";
+      document.getElementById("input-descricao").disabled = false;
+      document.getElementById("aviso-produto-novo").style.display = "block";
+    }
+  } catch (e) {
+    document.getElementById("input-descricao").value = "";
+    document.getElementById("input-descricao").disabled = false;
+  }
+
+  document.getElementById("cartao-confirmar").style.display = "block";
+}
+
+function gerarUuid() {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === "x" ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
+async function gravarEntrada() {
+  const quantidade = document.getElementById("input-quantidade").value;
+  const descricao = document.getElementById("input-descricao").value.trim();
+  const btn = document.getElementById("btn-gravar");
+  btn.disabled = true;
+  btn.textContent = "Gravando...";
+
+  try {
+    const resp = await fetch("/api/leitura-camera", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id_movimento: gerarUuid(),
+        posicao: posicaoLida,
+        sku: skuLido,
+        descricao_produto: descricao,
+        quantidade: quantidade,
+      }),
+    });
+
+    if (resp.status === 401) {
+      mostrarErroLogin();
+      return;
+    }
+
+    const dados = await resp.json();
+
+    if (!resp.ok) {
+      mostrarAvisoGeral(dados.erro || "Não foi possível gravar a entrada.", "erro");
+      btn.disabled = false;
+      btn.textContent = "Gravar entrada";
+      return;
+    }
+
+    historico.unshift({
+      sku: dados.sku,
+      posicao: dados.posicao,
+      quantidade: dados.quantidade,
+      descricao: dados.descricao_produto,
+    });
+    renderizarHistorico();
+    mostrarAvisoGeral("Entrada gravada com sucesso.", "ok");
+    resetarParaProximaLeitura();
+
+  } catch (e) {
+    mostrarAvisoGeral("Falha de conexão. Tente novamente.", "erro");
+    btn.disabled = false;
+    btn.textContent = "Gravar entrada";
+  }
+}
+
+function resetarParaProximaLeitura() {
+  etapa = "posicao";
+  posicaoLida = "";
+  skuLido = "";
+
+  document.getElementById("cartao-posicao-lida").style.display = "none";
+  document.getElementById("cartao-confirmar").style.display = "none";
+  document.getElementById("cartao-scanner").style.display = "block";
+
+  document.getElementById("passo-1").classList.remove("concluido");
+  document.getElementById("passo-1").classList.add("ativo");
+  document.getElementById("passo-2").classList.remove("ativo", "concluido");
+  document.getElementById("passo-3").classList.remove("ativo");
+
+  document.getElementById("titulo-scanner").textContent = "Escaneie a etiqueta da posição";
+  document.getElementById("legenda-scanner").textContent = "Aponte a câmera para o QR Code do endereço no armazém.";
+
+  document.getElementById("input-descricao").value = "";
+  document.getElementById("input-descricao").disabled = false;
+  document.getElementById("input-quantidade").value = "1";
+
+  const btn = document.getElementById("btn-gravar");
+  btn.disabled = false;
+  btn.textContent = "Gravar entrada";
+
+  retomarScanner();
+}
+
+function cancelarLeitura() {
+  resetarParaProximaLeitura();
+}
+
+function mostrarAvisoGeral(texto, tipo) {
+  const el = document.getElementById("aviso-geral");
+  el.innerHTML = `<div class="aviso ${tipo === "ok" ? "pendente" : "erro"}">${texto}</div>`;
+  setTimeout(() => { el.innerHTML = ""; }, 4000);
+}
+
+function mostrarErroLogin() {
+  document.getElementById("tela-erro-login").style.display = "block";
+  document.getElementById("cartao-scanner").style.display = "none";
+  document.getElementById("cartao-confirmar").style.display = "none";
+  if (scanner) scanner.stop().catch(() => {});
+}
+
+function renderizarHistorico() {
+  const el = document.getElementById("lista-historico");
+  if (historico.length === 0) {
+    el.innerHTML = "<p style='font-size:13px;color:var(--cinza-texto);'>Nenhuma leitura ainda.</p>";
+    return;
+  }
+  el.innerHTML = historico.slice(0, 10).map(item => `
+    <div class="item-historico">
+      <div>
+        <div class="sku">${item.sku}</div>
+        <div class="pos">${item.posicao} · ${item.descricao}</div>
+      </div>
+      <div class="qtd">${item.quantidade}</div>
+    </div>
+  `).join("");
+}
+
+renderizarHistorico();
+iniciarScanner();
+</script>
+
+</body>
+</html>
