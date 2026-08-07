@@ -204,10 +204,11 @@
 
   <div class="cartao" id="cartao-posicao-lida" style="display:none;">
     <div class="resultado ok">
-      <div>
+      <div style="flex:1;">
         <b id="valor-posicao"></b>
         Posição confirmada
       </div>
+      <button class="secundario" style="padding:6px 10px;font-size:12px;" onclick="corrigirPosicao()">Corrigir</button>
     </div>
   </div>
 
@@ -220,11 +221,11 @@
     </div>
 
     <div class="campo">
-      <label>Posição</label>
+      <label>Posição <a href="#" onclick="corrigirPosicao(); return false;" style="font-weight:400;">(corrigir)</a></label>
       <input type="text" id="input-posicao" disabled>
     </div>
     <div class="campo">
-      <label>SKU do produto</label>
+      <label>SKU do produto <a href="#" onclick="corrigirSku(); return false;" style="font-weight:400;">(corrigir)</a></label>
       <input type="text" id="input-sku" disabled>
     </div>
     <div class="campo">
@@ -252,11 +253,14 @@
 </div>
 
 <script>
+const TEMPO_PAUSA_MS = 5000;
+
 let etapa = "posicao";
 let posicaoLida = "";
 let skuLido = "";
 let scanner = null;
 let processandoSku = false;
+let aceitandoLeitura = true;
 
 const historico = [];
 
@@ -285,25 +289,74 @@ function retomarScanner() {
   }
 }
 
+// Pausa a leitura por alguns segundos e mostra uma contagem regressiva,
+// dando tempo do operador trocar a etiqueta na frente da câmera antes
+// de aceitar a próxima leitura. Evita ler a mesma etiqueta duas vezes.
+function pausarComContagem(mensagemBase, aoTerminar) {
+  aceitandoLeitura = false;
+  pausarScanner();
+  let restante = TEMPO_PAUSA_MS / 1000;
+  const legenda = document.getElementById("legenda-scanner");
+  legenda.textContent = `${mensagemBase} Pode trocar a etiqueta... (${restante}s)`;
+  const intervalo = setInterval(() => {
+    restante -= 1;
+    if (restante > 0) {
+      legenda.textContent = `${mensagemBase} Pode trocar a etiqueta... (${restante}s)`;
+    } else {
+      clearInterval(intervalo);
+      aceitandoLeitura = true;
+      retomarScanner();
+      if (aoTerminar) aoTerminar();
+    }
+  }, 1000);
+}
+
 async function aoLerQrCode(texto) {
+  const valor = texto.trim();
+  if (!aceitandoLeitura) return;
+
   if (etapa === "posicao") {
-    posicaoLida = texto.trim();
-    pausarScanner();
+    posicaoLida = valor;
     document.getElementById("valor-posicao").textContent = posicaoLida;
     document.getElementById("cartao-posicao-lida").style.display = "block";
     document.getElementById("passo-1").classList.remove("ativo");
     document.getElementById("passo-1").classList.add("concluido");
     document.getElementById("passo-2").classList.add("ativo");
-    document.getElementById("titulo-scanner").textContent = "Escaneie a etiqueta do produto";
-    document.getElementById("legenda-scanner").textContent = "Aponte a câmera para o QR Code do SKU do produto.";
     etapa = "produto";
-    retomarScanner();
+    document.getElementById("titulo-scanner").textContent = "Escaneie a etiqueta do produto";
+    pausarComContagem("Posição lida.", () => {
+      document.getElementById("legenda-scanner").textContent = "Aponte a câmera para o QR Code do SKU do produto.";
+    });
+
   } else if (etapa === "produto" && !processandoSku) {
+    if (valor === posicaoLida) {
+      // provável leitura duplicada da mesma etiqueta - ignora e avisa
+      mostrarAvisoGeral("Essa é a etiqueta da posição. Aponte para a etiqueta do produto.", "erro");
+      return;
+    }
     processandoSku = true;
-    skuLido = texto.trim();
+    skuLido = valor;
     pausarScanner();
     await buscarProdutoEAvancar();
     processandoSku = false;
+  }
+}
+
+function corrigirPosicao() {
+  const novaPosicao = prompt("Digite o código correto da posição:", posicaoLida);
+  if (novaPosicao && novaPosicao.trim()) {
+    posicaoLida = novaPosicao.trim();
+    document.getElementById("valor-posicao").textContent = posicaoLida;
+    document.getElementById("input-posicao").value = posicaoLida;
+  }
+}
+
+function corrigirSku() {
+  const novoSku = prompt("Digite o SKU correto do produto:", skuLido);
+  if (novoSku && novoSku.trim()) {
+    skuLido = novoSku.trim();
+    document.getElementById("input-sku").value = skuLido;
+    buscarProdutoEAvancar();
   }
 }
 
@@ -414,7 +467,6 @@ function resetarParaProximaLeitura() {
   document.getElementById("passo-3").classList.remove("ativo");
 
   document.getElementById("titulo-scanner").textContent = "Escaneie a etiqueta da posição";
-  document.getElementById("legenda-scanner").textContent = "Aponte a câmera para o QR Code do endereço no armazém.";
 
   document.getElementById("input-descricao").value = "";
   document.getElementById("input-descricao").disabled = false;
@@ -424,7 +476,9 @@ function resetarParaProximaLeitura() {
   btn.disabled = false;
   btn.textContent = "Gravar entrada";
 
-  retomarScanner();
+  pausarComContagem("Entrada gravada.", () => {
+    document.getElementById("legenda-scanner").textContent = "Aponte a câmera para o QR Code do endereço no armazém.";
+  });
 }
 
 function cancelarLeitura() {
