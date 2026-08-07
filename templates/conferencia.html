@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Conferência · JMK Estoque</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+<style>
+  :root {
+    --verde: #1a9e6d;
+    --verde-bg: #e5f6ee;
+    --vermelho: #d84343;
+    --vermelho-bg: #fbeaea;
+    --cinza-texto: #5b5f6b;
+    --cinza-borda: #e3e5ea;
+    --cinza-celula: #e9ebef;
+    --fundo: #f5f6f8;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    background: var(--fundo);
+    color: #1c1e26;
+  }
+  .topo {
+    background: #fff;
+    border-bottom: 1px solid var(--cinza-borda);
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .topo h1 { font-size: 17px; font-weight: 600; margin: 0; }
+  .topo a { font-size: 13px; color: var(--cinza-texto); text-decoration: none; }
+  .container { max-width: 900px; margin: 0 auto; padding: 20px 16px 60px; }
+
+  .cartao {
+    background: #fff;
+    border: 1px solid var(--cinza-borda);
+    border-radius: 14px;
+    padding: 18px;
+    margin-bottom: 16px;
+  }
+  .cartao h2 { font-size: 15px; font-weight: 600; margin: 0 0 4px; }
+  .cartao p.legenda { font-size: 13px; color: var(--cinza-texto); margin: 0 0 14px; }
+  #leitor-video { width: 100%; border-radius: 10px; overflow: hidden; background: #000; min-height: 220px; }
+
+  .resumo { display: flex; gap: 12px; margin-bottom: 16px; }
+  .resumo .bloco {
+    flex: 1;
+    background: #fff;
+    border: 1px solid var(--cinza-borda);
+    border-radius: 12px;
+    padding: 12px 14px;
+    text-align: center;
+  }
+  .resumo .bloco .num { font-size: 20px; font-weight: 700; }
+  .resumo .bloco .rot { font-size: 11px; color: var(--cinza-texto); }
+
+  .mapa-legenda { display: flex; gap: 16px; font-size: 12px; color: var(--cinza-texto); margin-bottom: 14px; align-items: center; }
+  .mapa-legenda span { display: flex; align-items: center; gap: 6px; }
+  .quadrado { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+  .pulso { width: 6px; height: 6px; border-radius: 50%; background: var(--verde); display: inline-block; animation: pulsar 1.4s infinite; }
+  @keyframes pulsar { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+  .grupo-lado { margin-bottom: 22px; }
+  .grupo-lado h3 {
+    font-size: 13px; font-weight: 600; margin: 0 0 10px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .grupo-lado h3 .badge {
+    font-size: 11px; font-weight: 600; color: var(--cinza-texto);
+    background: var(--fundo); padding: 2px 8px; border-radius: 20px;
+  }
+  .grade-lado { display: inline-block; }
+  .linha-nivel { display: flex; gap: 4px; margin-bottom: 4px; }
+  .rotulo-nivel {
+    width: 22px; font-size: 10px; color: var(--cinza-texto);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .celula {
+    width: 36px; height: 36px;
+    border-radius: 6px;
+    background: var(--cinza-celula);
+    border: 1px solid var(--cinza-borda);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px; color: var(--cinza-texto);
+    transition: background 0.3s;
+  }
+  .celula.conferida { background: var(--verde); border-color: var(--verde); color: #fff; }
+  .celula.vazia-slot { visibility: hidden; }
+
+  .lista-faltando {
+    max-height: 200px;
+    overflow-y: auto;
+    font-size: 12px;
+  }
+  .lista-faltando .item {
+    padding: 6px 0;
+    border-bottom: 1px solid var(--cinza-borda);
+    display: flex;
+    justify-content: space-between;
+  }
+  .lista-faltando .item:last-child { border-bottom: none; }
+  .vazio-ok { text-align: center; color: var(--verde); font-size: 13px; padding: 16px; }
+
+  .aviso { padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 12px; }
+  .aviso.ok { background: var(--verde-bg); color: #0e6b48; }
+  .aviso.erro { background: var(--vermelho-bg); color: #8c2626; }
+</style>
+</head>
+<body>
+
+<div class="topo">
+  <h1>Conferência de estoque</h1>
+  <a href="/dashboard">← Painel gerencial</a>
+</div>
+
+<div class="container">
+
+  <div class="cartao">
+    <h2>Bipar posição</h2>
+    <p class="legenda">Aponte a câmera para o QR Code da posição para marcar como conferida hoje.</p>
+    <div id="leitor-video"></div>
+  </div>
+
+  <div id="aviso-geral"></div>
+
+  <div class="resumo">
+    <div class="bloco">
+      <div class="num" id="num-conferidas">0</div>
+      <div class="rot">Conferidas hoje</div>
+    </div>
+    <div class="bloco">
+      <div class="num" id="num-total">0</div>
+      <div class="rot">Total de posições</div>
+    </div>
+    <div class="bloco">
+      <div class="num" id="num-pct">0%</div>
+      <div class="rot">Cobertura</div>
+    </div>
+  </div>
+
+  <div class="cartao">
+    <h2>Mapa em tempo real</h2>
+    <div class="mapa-legenda">
+      <span><span class="quadrado" style="background:var(--cinza-celula);"></span> não conferida</span>
+      <span><span class="quadrado" style="background:var(--verde);"></span> conferida hoje</span>
+      <span><span class="pulso"></span> atualizando ao vivo</span>
+    </div>
+    <div id="mapa">Carregando mapa...</div>
+  </div>
+
+  <div class="cartao">
+    <h2>Faltando conferir</h2>
+    <p class="legenda">Posições que ainda não foram bipadas hoje.</p>
+    <div class="lista-faltando" id="lista-faltando"></div>
+  </div>
+
+</div>
+
+<script>
+let scanner = null;
+let aceitandoLeitura = true;
+const TEMPO_PAUSA_MS = 2500;
+const INTERVALO_ATUALIZACAO_MS = 4000;
+
+function iniciarScanner() {
+  scanner = new Html5Qrcode("leitor-video");
+  scanner.start(
+    { facingMode: "environment" },
+    { fps: 10, qrbox: { width: 240, height: 240 } },
+    aoLerQrCode,
+    () => {}
+  ).catch(() => {
+    document.getElementById("leitor-video").innerHTML =
+      "<p style='color:#fff;padding:20px;font-size:13px;'>Não foi possível acessar a câmera. Verifique a permissão do navegador.</p>";
+  });
+}
+
+async function aoLerQrCode(texto) {
+  if (!aceitandoLeitura) return;
+  aceitandoLeitura = false;
+  scanner.pause(true);
+
+  const posicao = texto.trim();
+  try {
+    const resp = await fetch("/api/conferencia/bipar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ posicao, vazio: false }),
+    });
+    if (resp.status === 401) { window.location.href = "/"; return; }
+    const dados = await resp.json();
+    if (resp.ok) {
+      mostrarAviso(`${posicao} conferida.`, "ok");
+      await carregarMapa();
+    } else {
+      mostrarAviso(dados.erro || "Falha ao bipar.", "erro");
+    }
+  } catch (e) {
+    mostrarAviso("Falha de conexão.", "erro");
+  }
+
+  setTimeout(() => { aceitandoLeitura = true; scanner.resume(); }, TEMPO_PAUSA_MS);
+}
+
+function mostrarAviso(texto, tipo) {
+  const el = document.getElementById("aviso-geral");
+  el.innerHTML = `<div class="aviso ${tipo}">${texto}</div>`;
+  setTimeout(() => { el.innerHTML = ""; }, 2500);
+}
+
+function numeroOuTexto(v) {
+  const n = parseInt(v, 10);
+  return isNaN(n) ? v : n;
+}
+
+async function carregarMapa() {
+  const resp = await fetch("/api/conferencia/mapa");
+  if (resp.status === 401) { window.location.href = "/"; return; }
+  const dados = await resp.json();
+
+  const semGrade = dados.filter(d => d.lado === "BLC" || d.coluna === null || d.nivel === null);
+  const comGrade = dados.filter(d => !(d.lado === "BLC" || d.coluna === null || d.nivel === null));
+
+  const grupos = {};
+  comGrade.forEach(item => {
+    if (!grupos[item.lado]) grupos[item.lado] = [];
+    grupos[item.lado].push(item);
+  });
+
+  const mapa = document.getElementById("mapa");
+  let html = "";
+
+  Object.keys(grupos).sort().forEach(lado => {
+    const itens = grupos[lado];
+    const colunas = [...new Set(itens.map(i => i.coluna))].sort((a, b) => numeroOuTexto(a) - numeroOuTexto(b) || String(a).localeCompare(String(b)));
+    const niveis = [...new Set(itens.map(i => i.nivel))].sort((a, b) => numeroOuTexto(b) - numeroOuTexto(a) || String(b).localeCompare(String(a)));
+
+    const porCelula = {};
+    itens.forEach(i => { porCelula[`${i.coluna}|${i.nivel}`] = i; });
+
+    const conferidasLado = itens.filter(i => i.conferida).length;
+
+    html += `<div class="grupo-lado">
+      <h3>Rua ${lado} <span class="badge">${conferidasLado}/${itens.length}</span></h3>
+      <div class="grade-lado">`;
+
+    niveis.forEach(nivel => {
+      html += `<div class="linha-nivel"><div class="rotulo-nivel">${nivel}</div>`;
+      colunas.forEach(coluna => {
+        const item = porCelula[`${coluna}|${nivel}`];
+        if (item) {
+          html += `<div class="celula ${item.conferida ? "conferida" : ""}" title="${item.codigo}">${coluna}</div>`;
+        } else {
+          html += `<div class="celula vazia-slot"></div>`;
+        }
+      });
+      html += `</div>`;
+    });
+
+    html += `</div></div>`;
+  });
+
+  if (semGrade.length > 0) {
+    const conferidasBlc = semGrade.filter(i => i.conferida).length;
+    html += `<div class="grupo-lado"><h3>Bloco <span class="badge">${conferidasBlc}/${semGrade.length}</span></h3>
+      <div class="grade-lado"><div class="linha-nivel">`;
+    semGrade.forEach(item => {
+      html += `<div class="celula ${item.conferida ? "conferida" : ""}" title="${item.codigo}" style="width:auto;padding:0 8px;">${item.codigo.split("-").pop()}</div>`;
+    });
+    html += `</div></div></div>`;
+  }
+
+  mapa.innerHTML = html || "<p style='font-size:13px;color:var(--cinza-texto);'>Nenhuma posição cadastrada ainda.</p>";
+
+  atualizarResumo(dados);
+  atualizarListaFaltando(dados);
+}
+
+function atualizarResumo(dados) {
+  const total = dados.length;
+  const conferidas = dados.filter(d => d.conferida).length;
+  document.getElementById("num-total").textContent = total;
+  document.getElementById("num-conferidas").textContent = conferidas;
+  document.getElementById("num-pct").textContent = total ? Math.round((conferidas / total) * 100) + "%" : "0%";
+}
+
+function atualizarListaFaltando(dados) {
+  const faltando = dados.filter(d => !d.conferida);
+  const el = document.getElementById("lista-faltando");
+  if (faltando.length === 0) {
+    el.innerHTML = '<div class="vazio-ok">Tudo conferido hoje.</div>';
+    return;
+  }
+  el.innerHTML = faltando.slice(0, 300).map(f => `
+    <div class="item"><span>${f.codigo}</span></div>
+  `).join("") + (faltando.length > 300 ? `<div class="item"><span>... e mais ${faltando.length - 300}</span></div>` : "");
+}
+
+carregarMapa();
+setInterval(carregarMapa, INTERVALO_ATUALIZACAO_MS);
+iniciarScanner();
+</script>
+
+</body>
+</html>

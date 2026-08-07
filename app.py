@@ -272,6 +272,164 @@ def registrar_leitura_camera():
         conn.close()
 
 
+@app.route("/api/produtos/pendentes", methods=["GET"])
+@login_required
+def produtos_pendentes():
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT sku, descricao FROM tb_produtos WHERE pendente_validacao = 1 ORDER BY sku")
+    dados = [{"sku": r[0], "descricao": r[1]} for r in cur.fetchall()]
+    conn.close()
+    return jsonify(dados)
+
+
+@app.route("/api/produtos/<sku>/aprovar", methods=["POST"])
+@login_required
+def aprovar_produto(sku):
+    dados = request.get_json(force=True) or {}
+    nova_descricao = (dados.get("descricao") or "").strip()
+
+    conn = get_conn()
+    cur = conn.cursor()
+    try:
+        if nova_descricao:
+            cur.execute(
+                "UPDATE tb_produtos SET descricao = %s, pendente_validacao = 0 WHERE sku = %s",
+                (nova_descricao, sku),
+            )
+        else:
+            cur.execute(
+                "UPDATE tb_produtos SET pendente_validacao = 0 WHERE sku = %s",
+                (sku,),
+            )
+        if cur.rowcount == 0:
+            conn.close()
+            return jsonify({"erro": "produto não encontrado"}), 404
+        conn.commit()
+        return jsonify({"ok": True, "sku": sku})
+    except Exception as e:
+        conn.rollback()
+        app.logger.exception("Erro ao aprovar produto")
+        return jsonify({"erro": "falha ao aprovar", "detalhe": str(e)}), 500
+    finally:
+        conn.close()
+
+
+@app.route("/api/produtos/<sku>/rejeitar", methods=["POST"])
+@login_required
+def rejeitar_produto(sku):
+    conn = get_conn()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "SELECT ISNULL(SUM(quantidade), 0) FROM tb_saldo_posicao WHERE sku = %s",
+            (sku,),
+        )
+        saldo_total = float(cur.fetchone()[0])
+        if saldo_total != 0:
+            conn.close()
+            return jsonify({
+                "erro": "esse SKU já tem saldo lançado em alguma posição - "
+                        "não pode ser removido, só corrigido (use aprovar com nova descrição)"
+            }), 400
+
+        cur.execute("DELETE FROM tb_produtos WHERE sku = %s", (sku,))
+        if cur.rowcount == 0:
+            conn.close()
+            return jsonify({"erro": "produto não encontrado"}), 404
+        conn.commit()
+        return jsonify({"ok": True, "sku": sku})
+    except Exception as e:
+        conn.rollback()
+        app.logger.exception("Erro ao rejeitar produto")
+        return jsonify({"erro": "falha ao rejeitar", "detalhe": str(e)}), 500
+    finally:
+        conn.close()
+
+
+# --------------------------------------------------------------------------
+# CONFERÊNCIA (mapa de posições bipadas)
+# --------------------------------------------------------------------------
+@app.route("/api/conferencia/bipar", methods=["POST"])
+@login_required
+def conferencia_bipar():
+    """Registra que uma posição foi fisicamente conferida hoje - com ou
+    sem produto encontrado. Usado tanto pelo modo de conferência (mapa
+    que vai ficando verde) quanto pelo leitor de câmera quando nenhuma
+    etiqueta de produto é lida a tempo (posição vazia)."""
+    dados = request.get_json(force=True)
+    posicao = (dados.get("posicao") or "").strip()
+    vazio = bool(dados.get("vazio"))
+    if not posicao:
+        return jsonify({"erro": "posicao é obrigatória"}), 400
+
+    conn = get_conn()
+    cur = conn.cursor()
+    try:
+        garantir_posicao_cadastrada(cur, posicao)
+        import uuid
+        tipo = "CONFERENCIA_VAZIA" if vazio else "CONFERENCIA"
+        cur.execute(
+            "INSERT INTO tb_log_auditoria "
+            "(id_movimento, data_hora_brasilia, tipo_operacao, operador_id, chave_nfe, numero_nf, "
+            " sku, descricao_produto, quantidade, posicao_origem, posicao_destino) "
+            "VALUES (%s, SYSDATETIME(), %s, %s, '', NULL, NULL, NULL, 0, NULL, %s)",
+            (str(uuid.uuid4()), tipo, current_user.id, posicao),
+        )
+        conn.commit()
+        return jsonify({"ok": True, "posicao": posicao, "vazio": vazio})
+    except Exception as e:
+        conn.rollback()
+        app.logger.exception("Erro ao registrar conferência")
+        return jsonify({"erro": "falha ao registrar conferência", "detalhe": str(e)}), 500
+    finally:
+        conn.close()
+
+
+@app.route("/api/conferencia/mapa", methods=["GET"])
+@login_required
+def conferencia_mapa():
+    """Lista todas as posições com lado/coluna/nível já separados e se
+    foram conferidas hoje - usado para montar o mapa em grade (colunas x
+    níveis) que vai ficando verde em tempo real conforme se bipa."""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT
+            p.codigo,
+            CASE WHEN p.codigo LIKE 'JMK1-BLC-%%' THEN 'BLC'
+                 ELSE PARSENAME(REPLACE(p.codigo, '-', '.'), 3) END AS lado,
+            CASE WHEN p.codigo LIKE 'JMK1-BLC-%%' THEN NULL
+                 ELSE PARSENAME(REPLACE(p.codigo, '-', '.'), 2) END AS coluna,
+            CASE WHEN p.codigo LIKE 'JMK1-BLC-%%' THEN NULL
+                 ELSE PARSENAME(REPLACE(p.codigo, '-', '.'), 1) END AS nivel,
+            CASE WHEN EXISTS (
+                SELECT 1 FROM tb_log_auditoria l
+                WHERE l.posicao_destino = p.codigo
+                  AND l.tipo_operacao IN ('CONFERENCIA', 'CONFERENCIA_VAZIA')
+                  AND CAST(l.data_hora_brasilia AS DATE) = CAST(SYSDATETIME() AS DATE)
+            ) THEN 1 ELSE 0 END AS conferida
+        FROM tb_posicoes p
+        ORDER BY p.codigo
+    """)
+    dados = [
+        {"codigo": r[0], "lado": r[1], "coluna": r[2], "nivel": r[3], "conferida": bool(r[4])}
+        for r in cur.fetchall()
+    ]
+    conn.close()
+    return jsonify(dados)
+
+
+@app.route("/aprovacoes")
+def pagina_aprovacoes():
+    return send_from_directory("templates", "aprovacoes.html")
+
+
+@app.route("/conferencia")
+def pagina_conferencia():
+    return send_from_directory("templates", "conferencia.html")
+
+
 @app.route("/api/movimento", methods=["POST"])
 @login_required
 def registrar_movimento():
