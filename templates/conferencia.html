@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Conferência · JMK Estoque</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
 <style>
   :root {
     --verde: #1a9e6d;
@@ -161,6 +160,18 @@
 </div>
 
 <script>
+function carregarBibliotecaQr(callback) {
+  const script = document.createElement("script");
+  script.src = "https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js";
+  script.onload = callback;
+  script.onerror = () => {
+    document.getElementById("leitor-video").innerHTML =
+      "<p style='color:#fff;padding:20px;font-size:13px;'>Não foi possível carregar o leitor de QR Code. " +
+      "Verifique sua conexão com a internet e recarregue a página.</p>";
+  };
+  document.head.appendChild(script);
+}
+
 let scanner = null;
 let aceitandoLeitura = true;
 const TEMPO_PAUSA_MS = 2500;
@@ -302,7 +313,9 @@ function atualizarListaFaltando(dados) {
 
 carregarMapa();
 setInterval(carregarMapa, INTERVALO_ATUALIZACAO_MS);
-iniciarScanner();
+document.getElementById("leitor-video").innerHTML =
+  "<p style='color:#fff;padding:20px;font-size:13px;'>Carregando leitor de câmera...</p>";
+carregarBibliotecaQr(iniciarScanner);
 </script>
 
 </body>

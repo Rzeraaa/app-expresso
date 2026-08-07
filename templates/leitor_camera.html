@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Leitor de câmera · JMK Estoque</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
 <style>
   :root {
     --azul: #2f5fda;
@@ -253,6 +252,20 @@
 </div>
 
 <script>
+// Carrega a biblioteca de leitura de QR Code em segundo plano, sem travar
+// a página inteira caso a rede esteja lenta ou bloqueie o CDN.
+function carregarBibliotecaQr(callback) {
+  const script = document.createElement("script");
+  script.src = "https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js";
+  script.onload = callback;
+  script.onerror = () => {
+    document.getElementById("leitor-video").innerHTML =
+      "<p style='color:#fff;padding:20px;font-size:13px;'>Não foi possível carregar o leitor de QR Code. " +
+      "Verifique sua conexão com a internet e recarregue a página.</p>";
+  };
+  document.head.appendChild(script);
+}
+
 const TEMPO_PAUSA_MS = 5000;
 const TEMPO_ESPERA_PRODUTO_MS = 10000;
 
@@ -544,7 +557,9 @@ function renderizarHistorico() {
 }
 
 renderizarHistorico();
-iniciarScanner();
+document.getElementById("leitor-video").innerHTML =
+  "<p style='color:#fff;padding:20px;font-size:13px;'>Carregando leitor de câmera...</p>";
+carregarBibliotecaQr(iniciarScanner);
 </script>
 
 </body>
