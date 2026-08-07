@@ -190,6 +190,88 @@ def garantir_posicao_cadastrada(cur, codigo):
             pass  # corrida entre dois coletores bipando a mesma posição nova
 
 
+@app.route("/api/leitura-camera", methods=["POST"])
+@login_required
+def registrar_leitura_camera():
+    """Registra uma ENTRADA a partir da leitura sequencial de dois QR Codes
+    (posição + produto) feita pela câmera no navegador. Não exige NF-e,
+    ao contrário de /api/movimento - esse fluxo é guarda física simples,
+    sem nota vinculada. Cadastra o produto automaticamente se o SKU lido
+    ainda não existir (com a descrição informada na hora pelo operador)."""
+    dados = request.get_json(force=True)
+
+    posicao = (dados.get("posicao") or "").strip()
+    sku = (dados.get("sku") or "").strip()
+    descricao_produto = (dados.get("descricao_produto") or "").strip()
+    quantidade = dados.get("quantidade", 1)
+    id_movimento = (dados.get("id_movimento") or "").strip()
+
+    if not posicao or not sku or not id_movimento:
+        return jsonify({"erro": "posicao, sku e id_movimento são obrigatórios"}), 400
+
+    try:
+        quantidade = float(quantidade)
+        if quantidade <= 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        return jsonify({"erro": "quantidade inválida"}), 400
+
+    conn = get_conn()
+    cur = conn.cursor()
+    try:
+        # ---- idempotência: já processamos essa leitura antes? ----
+        cur.execute(
+            "SELECT 1 FROM tb_log_auditoria WHERE id_movimento = %s",
+            (id_movimento,),
+        )
+        if cur.fetchone():
+            conn.close()
+            return jsonify({"ok": True, "duplicado": True})
+
+        garantir_posicao_cadastrada(cur, posicao)
+
+        # ---- produto novo? cadastra na hora (fica pendente_validacao) ----
+        cur.execute("SELECT descricao FROM tb_produtos WHERE sku = %s", (sku,))
+        row = cur.fetchone()
+        if row:
+            descricao_produto = row[0]
+        else:
+            if not descricao_produto:
+                descricao_produto = f"Produto {sku} - cadastrado via leitor de câmera"
+            try:
+                cur.execute(
+                    "INSERT INTO tb_produtos (sku, descricao, pendente_validacao) VALUES (%s, %s, 1)",
+                    (sku, descricao_produto),
+                )
+            except pymssql.IntegrityError:
+                pass  # corrida entre duas leituras do mesmo SKU novo
+
+        # ---- log de auditoria (chave_nfe vazia = sem nota vinculada) ----
+        cur.execute(
+            "INSERT INTO tb_log_auditoria "
+            "(id_movimento, data_hora_brasilia, tipo_operacao, operador_id, chave_nfe, numero_nf, "
+            " sku, descricao_produto, quantidade, posicao_origem, posicao_destino) "
+            "VALUES (%s, SYSDATETIME(), 'ENTRADA', %s, '', NULL, %s, %s, %s, NULL, %s)",
+            (id_movimento, current_user.id, sku, descricao_produto, quantidade, posicao),
+        )
+
+        aplicar_saldo(cur, sku, posicao, quantidade)
+
+        conn.commit()
+        return jsonify({
+            "ok": True, "duplicado": False,
+            "posicao": posicao, "sku": sku,
+            "descricao_produto": descricao_produto, "quantidade": quantidade,
+        })
+
+    except Exception as e:
+        conn.rollback()
+        app.logger.exception("Erro ao registrar leitura de câmera")
+        return jsonify({"erro": "falha ao gravar leitura", "detalhe": str(e)}), 500
+    finally:
+        conn.close()
+
+
 @app.route("/api/movimento", methods=["POST"])
 @login_required
 def registrar_movimento():
@@ -1020,6 +1102,11 @@ def pagina_estoque_visual():
 @app.route("/dashboard")
 def pagina_dashboard():
     return send_from_directory("templates", "dashboard.html")
+
+
+@app.route("/leitor")
+def pagina_leitor_camera():
+    return send_from_directory("templates", "leitor_camera.html")
 
 
 # --------------------------------------------------------------------------
