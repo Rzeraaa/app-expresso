@@ -254,6 +254,7 @@
 
 <script>
 const TEMPO_PAUSA_MS = 5000;
+const TEMPO_ESPERA_PRODUTO_MS = 10000;
 
 let etapa = "posicao";
 let posicaoLida = "";
@@ -261,6 +262,7 @@ let skuLido = "";
 let scanner = null;
 let processandoSku = false;
 let aceitandoLeitura = true;
+let timerEsperaProduto = null;
 
 const historico = [];
 
@@ -326,6 +328,7 @@ async function aoLerQrCode(texto) {
     document.getElementById("titulo-scanner").textContent = "Escaneie a etiqueta do produto";
     pausarComContagem("Posição lida.", () => {
       document.getElementById("legenda-scanner").textContent = "Aponte a câmera para o QR Code do SKU do produto.";
+      iniciarEsperaProduto();
     });
 
   } else if (etapa === "produto" && !processandoSku) {
@@ -334,12 +337,35 @@ async function aoLerQrCode(texto) {
       mostrarAvisoGeral("Essa é a etiqueta da posição. Aponte para a etiqueta do produto.", "erro");
       return;
     }
+    clearTimeout(timerEsperaProduto);
     processandoSku = true;
     skuLido = valor;
     pausarScanner();
     await buscarProdutoEAvancar();
     processandoSku = false;
   }
+}
+
+// Se depois de ler a posição nenhuma etiqueta de produto for encontrada
+// em 10 segundos, assume que a posição está vazia e registra sozinho,
+// sem travar o operador esperando.
+function iniciarEsperaProduto() {
+  clearTimeout(timerEsperaProduto);
+  timerEsperaProduto = setTimeout(async () => {
+    if (etapa !== "produto") return;
+    pausarScanner();
+    try {
+      await fetch("/api/conferencia/bipar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ posicao: posicaoLida, vazio: true }),
+      });
+      mostrarAvisoGeral(`Posição ${posicaoLida} registrada como vazia.`, "pendente");
+    } catch (e) {
+      mostrarAvisoGeral("Falha ao registrar posição vazia.", "erro");
+    }
+    resetarParaProximaLeitura();
+  }, TEMPO_ESPERA_PRODUTO_MS);
 }
 
 function corrigirPosicao() {
@@ -352,6 +378,7 @@ function corrigirPosicao() {
 }
 
 function corrigirSku() {
+  clearTimeout(timerEsperaProduto);
   const novoSku = prompt("Digite o SKU correto do produto:", skuLido);
   if (novoSku && novoSku.trim()) {
     skuLido = novoSku.trim();
@@ -453,6 +480,7 @@ async function gravarEntrada() {
 }
 
 function resetarParaProximaLeitura() {
+  clearTimeout(timerEsperaProduto);
   etapa = "posicao";
   posicaoLida = "";
   skuLido = "";
