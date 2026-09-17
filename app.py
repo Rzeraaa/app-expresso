@@ -34,10 +34,16 @@ limiter = Limiter(get_remote_address, app=app, default_limits=[])
 def get_conn():
     return pymssql.connect(
         server=config.SQL_SERVER,
+        port=config.SQL_PORT,
         user=config.SQL_USER,
         password=config.SQL_PASSWORD,
         database=config.SQL_DATABASE,
         as_dict=False,
+        tds_version="7.4",   # Azure SQL exige TDS 7.4+; sem isso o FreeTDS do
+                             # Linux (Render) falha o handshake TLS e derruba
+                             # a conexao com "Adaptive Server connection failed"
+        login_timeout=10,
+        timeout=30,
     )
 
 
