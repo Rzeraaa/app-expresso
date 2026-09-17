@@ -47,6 +47,33 @@ def get_conn():
     )
 
 
+@app.route("/api/_diag-db", methods=["GET"])
+def diag_db():
+    """
+    Rota temporaria de diagnostico - remover depois de resolver a conexao
+    com o Azure SQL no Render. Nao expoe senha nem dados do banco.
+    """
+    import socket
+    resultado = {"host": config.SQL_SERVER, "port": config.SQL_PORT}
+
+    try:
+        s = socket.create_connection((config.SQL_SERVER, config.SQL_PORT), timeout=10)
+        s.close()
+        resultado["tcp"] = "ok"
+    except Exception as e:
+        resultado["tcp"] = f"falhou: {type(e).__name__}: {e}"
+        return jsonify(resultado), 200
+
+    try:
+        conn = get_conn()
+        conn.close()
+        resultado["pymssql"] = "ok"
+    except Exception as e:
+        resultado["pymssql"] = f"falhou: {type(e).__name__}: {e}"
+
+    return jsonify(resultado), 200
+
+
 # --------------------------------------------------------------------------
 # AUTENTICAÇÃO
 # --------------------------------------------------------------------------
